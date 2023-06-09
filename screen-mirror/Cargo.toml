@@ -1,0 +1,21 @@
+[package]
+name = "screen-mirror"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies.tokio]
+version = "1.28.2"
+features = ["rt", "rt-multi-thread", "macros", "net"]
+
+[dependencies.remotia]
+# git = "https://github.com/remotia/remotia"
+# branch = "generic_data"
+path = "../../remotia"
+default-features = false
+features = ["buffers", "capture", "profilation", "transmission", "render"]
+
+[dependencies]
+log = "0.4.18"
+env_logger = "0.10.0"
+bytes = "1.4.0"
+clap = { version = "4.3.2", features = ["derive"] }
