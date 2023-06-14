@@ -1,15 +1,20 @@
+use std::time::Duration;
+
 use clap::Parser;
 use remotia::{
     buffers::pool_registry::PoolRegistry,
     capture::scrap::ScrapFrameCapturer,
     pipeline::{component::Component, Pipeline},
-    processors::{error_switch::OnErrorSwitch, functional::Function, ticker::Ticker}, traits::BorrowFrameProperties,
+    processors::{error_switch::OnErrorSwitch, functional::Function, ticker::Ticker},
 };
 use remotia_ffmpeg_codecs::{
     encoders::EncoderBuilder, ffi, options::Options, scaling::ScalerBuilder,
 };
 
-use remotia_srt::{srt_tokio::SrtSocket, sender::SRTFrameSender};
+use remotia_srt::{
+    sender::SRTFrameSender,
+    srt_tokio::{options::ByteCount, SrtSocket},
+};
 use screen_stream::types::{BufferType::*, FrameData};
 
 #[derive(Parser, Debug)]
@@ -17,8 +22,8 @@ struct Args {
     #[arg(short, long, default_value_t = 60)]
     framerate: u64,
 
-    #[arg(long, default_value_t = 9000)]
-    port: u16,
+    #[arg(long, default_value_t=String::from(":9000"))]
+    listen_address: String,
 }
 
 const POOLS_SIZE: usize = 1;
@@ -42,7 +47,7 @@ async fn main() {
         .register(CapturedRGBAFrameBuffer, POOLS_SIZE, pixels_count * 4)
         .await;
     registry
-        .register(EncodedFrameBuffer, POOLS_SIZE, pixels_count)
+        .register(EncodedFrameBuffer, POOLS_SIZE, pixels_count * 4)
         .await;
 
     let (encoder_pusher, encoder_puller) = EncoderBuilder::new()
@@ -57,10 +62,12 @@ async fn main() {
                 .output_pixel_format(ffi::AVPixelFormat_AV_PIX_FMT_YUV420P)
                 .build(),
         )
-        .options(Options::new()
-            .set("crf", "26")
-            .set("tune", "zerolatency")
-            .set("keyint", "1"))
+        .options(
+            Options::new()
+                .set("crf", "26")
+                .set("tune", "zerolatency")
+                .set("x264opts", "keyint=30"),
+        )
         .build();
 
     let mut error_pipeline = Pipeline::<FrameData>::singleton(
@@ -75,21 +82,33 @@ async fn main() {
     .feedable();
 
     log::info!("Waiting for connection...");
-    let socket = SrtSocket::builder().listen_on(args.port).await.unwrap();
+    let socket = SrtSocket::builder()
+        .latency(Duration::from_millis(50))
+        .set(|options| options.sender.buffer_size = ByteCount(1024 * 1024))
+        .listen_on(args.listen_address.as_str())
+        .await
+        .unwrap();
 
-    let pipeline = Pipeline::<FrameData>::new().link(
-        Component::new()
-            .append(Ticker::new(1000 / args.framerate))
-            .append(registry.get(CapturedRGBAFrameBuffer).borrower())
-            .append(capturer)
-            .append(encoder_pusher)
-            .append(registry.get(CapturedRGBAFrameBuffer).redeemer())
-            .append(registry.get(EncodedFrameBuffer).borrower())
-            .append(encoder_puller)
-            .append(OnErrorSwitch::new(&mut error_pipeline))
-            .append(SRTFrameSender::new(EncodedFrameBuffer, socket))
-            .append(registry.get(EncodedFrameBuffer).redeemer()),
-    );
+    let pipeline = Pipeline::<FrameData>::new()
+        .link(
+            Component::new()
+                .append(Ticker::new(1000 / args.framerate))
+                .append(registry.get(CapturedRGBAFrameBuffer).borrower())
+                .append(capturer)
+                .append(encoder_pusher),
+        )
+        .link(
+            Component::new()
+                .append(registry.get(CapturedRGBAFrameBuffer).redeemer())
+                .append(registry.get(EncodedFrameBuffer).borrower())
+                .append(encoder_puller)
+                .append(OnErrorSwitch::new(&mut error_pipeline)),
+        )
+        .link(
+            Component::new()
+                .append(SRTFrameSender::new(EncodedFrameBuffer, socket))
+                .append(registry.get(EncodedFrameBuffer).redeemer()),
+        );
 
     let mut handles = Vec::new();
     handles.extend(error_pipeline.run());

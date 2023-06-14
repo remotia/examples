@@ -3,11 +3,14 @@ use remotia::{
     buffers::pool_registry::PoolRegistry,
     pipeline::{component::Component, Pipeline},
     processors::{error_switch::OnErrorSwitch, functional::Function},
-    render::winit::WinitRenderer, traits::{BorrowMutFrameProperties, BorrowFrameProperties},
+    render::winit::WinitRenderer,
 };
 use remotia_ffmpeg_codecs::{decoders::DecoderBuilder, ffi, scaling::ScalerBuilder};
 
-use remotia_srt::{receiver::SRTFrameReceiver, srt_tokio::SrtSocket};
+use remotia_srt::{
+    receiver::SRTFrameReceiver,
+    srt_tokio::{options::ByteCount, SrtSocket},
+};
 use screen_stream::types::{BufferType::*, Error::*, FrameData};
 
 #[derive(Parser, Debug)]
@@ -36,7 +39,7 @@ async fn main() {
     let pixels_count = (args.width * args.height) as usize;
     let mut registry = PoolRegistry::new();
     registry
-        .register(EncodedFrameBuffer, POOLS_SIZE, pixels_count)
+        .register(EncodedFrameBuffer, POOLS_SIZE, pixels_count * 4)
         .await;
     registry
         .register(DecodedRGBAFrameBuffer, POOLS_SIZE, pixels_count * 4)
@@ -71,27 +74,32 @@ async fn main() {
 
     log::info!("Connecting...");
     let socket = SrtSocket::builder()
+        .set(|options| options.receiver.buffer_size = ByteCount(1024 * 1024))
         .call(args.server_address.as_str(), None)
         .await
         .unwrap();
 
-    let pipeline = Pipeline::<FrameData>::new().link(
-        Component::new()
-            .append(registry.get(EncodedFrameBuffer).borrower())
-            .append(SRTFrameReceiver::new(EncodedFrameBuffer, socket))
-            .append(decoder_pusher)
-            .append(registry.get(EncodedFrameBuffer).redeemer())
-            .append(OnErrorSwitch::new(&mut error_pipeline))
-            .append(registry.get(DecodedRGBAFrameBuffer).borrower())
-            .append(decoder_puller)
-            .append(OnErrorSwitch::new(&mut error_pipeline))
-            .append(WinitRenderer::new(
-                DecodedRGBAFrameBuffer,
-                args.width,
-                args.height,
-            ))
-            .append(registry.get(DecodedRGBAFrameBuffer).redeemer()),
-    );
+    let pipeline = Pipeline::<FrameData>::new()
+        .link(
+            Component::new()
+                .append(registry.get(EncodedFrameBuffer).borrower())
+                .append(SRTFrameReceiver::new(EncodedFrameBuffer, socket))
+                .append(decoder_pusher)
+                .append(registry.get(EncodedFrameBuffer).redeemer())
+                .append(OnErrorSwitch::new(&mut error_pipeline)),
+        )
+        .link(
+            Component::new()
+                .append(registry.get(DecodedRGBAFrameBuffer).borrower())
+                .append(decoder_puller)
+                .append(OnErrorSwitch::new(&mut error_pipeline))
+                .append(WinitRenderer::new(
+                    DecodedRGBAFrameBuffer,
+                    args.width,
+                    args.height,
+                ))
+                .append(registry.get(DecodedRGBAFrameBuffer).redeemer()),
+        );
 
     let mut handles = Vec::new();
     handles.extend(error_pipeline.run());
