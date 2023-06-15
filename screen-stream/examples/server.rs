@@ -28,11 +28,17 @@ struct Args {
     #[arg(long, default_value_t=String::from(":9000"))]
     listen_address: String,
 
+    #[arg(long, default_value_t=String::from("libx264"))]
+    codec_id: String,
+
     #[arg(long)]
     stream_width: Option<u32>,
 
     #[arg(long)]
     stream_height: Option<u32>,
+
+    #[arg(id = "codec-option", long)]
+    codec_options: Vec<String>,
 }
 
 const POOLS_SIZE: usize = 1;
@@ -40,7 +46,7 @@ const POOLS_SIZE: usize = 1;
 #[tokio::main]
 async fn main() {
     env_logger::init();
-    log::info!("Hello World! I will mirror your screen encoding it using the H264 codec.");
+    log::info!("Hello World!");
 
     let args = Args::parse();
 
@@ -66,8 +72,15 @@ async fn main() {
         .register(SerializedFrameData, POOLS_SIZE, pixels_count * 4)
         .await;
 
+    log::info!("{:?}", args.codec_options);
+    let mut options = Options::new();
+    for option in args.codec_options {
+        let mut fragments = option.split(" ");
+        let (key, value) = (fragments.next().unwrap(), fragments.next().unwrap());
+        options = options.set(key, value);
+    }
     let (encoder_pusher, encoder_puller) = EncoderBuilder::new()
-        .codec_id("libx264")
+        .codec_id(&args.codec_id)
         .rgba_buffer_key(CapturedRGBAFrameBuffer)
         .encoded_buffer_key(EncodedFrameBuffer)
         .scaler(
@@ -80,13 +93,7 @@ async fn main() {
                 .output_pixel_format(ffi::AVPixelFormat_AV_PIX_FMT_YUV420P)
                 .build(),
         )
-        .options(
-            Options::new()
-                .set("crf", "26")
-                .set("preset", "veryfast")
-                .set("tune", "zerolatency")
-                .set("x264opts", "keyint=30"),
-        )
+        .options(options)
         .build();
 
     let mut error_pipeline = Pipeline::<FrameData>::singleton(
@@ -137,7 +144,7 @@ async fn main() {
                     TransmissionStartTime,
                     TransmissionTime,
                 ))
-                .append(registry.get(SerializedFrameData).redeemer())
+                .append(registry.get(SerializedFrameData).redeemer()),
         )
         .link(
             Component::new().append(

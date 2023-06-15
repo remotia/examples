@@ -27,6 +27,9 @@ struct Args {
 
     #[arg(long, default_value_t=String::from("127.0.0.1:9000"))]
     server_address: String,
+
+    #[arg(long, default_value_t=String::from("h264"))]
+    codec_id: String,
 }
 
 const POOLS_SIZE: usize = 1;
@@ -34,7 +37,7 @@ const POOLS_SIZE: usize = 1;
 #[tokio::main]
 async fn main() {
     env_logger::init();
-    log::info!("Hello World! I will mirror your screen encoding it using the H264 codec.");
+    log::info!("Hello World!");
 
     let args = Args::parse();
 
@@ -50,7 +53,7 @@ async fn main() {
         .await;
 
     let (decoder_pusher, decoder_puller) = DecoderBuilder::new()
-        .codec_id("h264")
+        .codec_id(&args.codec_id)
         .encoded_buffer_key(EncodedFrameBuffer)
         .decoded_buffer_key(DecodedRGBAFrameBuffer)
         .scaler(
