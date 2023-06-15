@@ -1,21 +1,23 @@
 use std::time::Duration;
 
 use clap::Parser;
+use remotia::profilation::loggers::console::ConsoleAverageStatsLogger;
+use remotia::profilation::time::diff::TimestampDiffCalculator;
 use remotia::{
     buffers::pool_registry::PoolRegistry,
     capture::scrap::ScrapFrameCapturer,
     pipeline::{component::Component, Pipeline},
     processors::{error_switch::OnErrorSwitch, functional::Function, ticker::Ticker},
+    profilation::time::add::TimestampAdder,
 };
 use remotia_ffmpeg_codecs::{
     encoders::EncoderBuilder, ffi, options::Options, scaling::ScalerBuilder,
 };
-
 use remotia_srt::{
     sender::SRTFrameSender,
     srt_tokio::{options::ByteCount, SrtSocket},
 };
-use screen_stream::types::{BufferType::*, FrameData};
+use screen_stream::types::{BufferType::*, FrameData, Stat::*};
 
 #[derive(Parser, Debug)]
 struct Args {
@@ -65,6 +67,7 @@ async fn main() {
         .options(
             Options::new()
                 .set("crf", "26")
+                .set("preset", "veryfast")
                 .set("tune", "zerolatency")
                 .set("x264opts", "keyint=30"),
         )
@@ -94,7 +97,9 @@ async fn main() {
             Component::new()
                 .append(Ticker::new(1000 / args.framerate))
                 .append(registry.get(CapturedRGBAFrameBuffer).borrower())
+                .append(TimestampAdder::new(CaptureTime))
                 .append(capturer)
+                .append(TimestampAdder::new(EncodePushTime))
                 .append(encoder_pusher),
         )
         .link(
@@ -102,12 +107,26 @@ async fn main() {
                 .append(registry.get(CapturedRGBAFrameBuffer).redeemer())
                 .append(registry.get(EncodedFrameBuffer).borrower())
                 .append(encoder_puller)
+                .append(TimestampDiffCalculator::new(EncodePushTime, EncodeTime))
                 .append(OnErrorSwitch::new(&mut error_pipeline)),
         )
         .link(
             Component::new()
+                .append(TimestampAdder::new(TransmissionStartTime))
                 .append(SRTFrameSender::new(EncodedFrameBuffer, socket))
+                .append(TimestampDiffCalculator::new(
+                    TransmissionStartTime,
+                    TransmissionTime,
+                ))
                 .append(registry.get(EncodedFrameBuffer).redeemer()),
+        )
+        .link(
+            Component::new().append(
+                ConsoleAverageStatsLogger::new()
+                    .header("Statistics")
+                    .log(EncodeTime)
+                    .log(TransmissionTime),
+            ),
         );
 
     let mut handles = Vec::new();

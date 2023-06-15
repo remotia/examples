@@ -9,7 +9,7 @@ features = ["rt", "rt-multi-thread", "macros", "net"]
 
 [dependencies.remotia]
 path = "../../remotia"
-features = ["buffers", "capture", "render"]
+features = ["buffers", "capture", "render", "profilation"]
 
 [dependencies]
 remotia-ffmpeg-codecs = { path = "../../remotia-ffmpeg-codecs" }

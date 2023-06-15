@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use remotia::{traits::{PullableFrameProperties, BorrowFrameProperties, BorrowMutFrameProperties, FrameError}, buffers::BytesMut};
+use remotia::{traits::{PullableFrameProperties, BorrowFrameProperties, BorrowMutFrameProperties, FrameError, FrameProperties}, buffers::BytesMut};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum BufferType {
@@ -9,6 +9,15 @@ pub enum BufferType {
     DecodedRGBAFrameBuffer,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Stat {
+    CaptureTime,
+    EncodePushTime,
+    TransmissionStartTime,
+
+    EncodeTime,
+    TransmissionTime
+}
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Error {
@@ -18,8 +27,19 @@ pub enum Error {
 
 #[derive(Default, Debug)]
 pub struct FrameData {
+    statistics: HashMap<Stat, u128>,
     buffers: HashMap<BufferType, BytesMut>,
     error: Option<Error>
+}
+
+impl FrameProperties<Stat, u128> for FrameData {
+    fn set(&mut self, key: Stat, value: u128) {
+        self.statistics.insert(key, value);
+    }
+
+    fn get(&self, key: &Stat) -> Option<u128> {
+        self.statistics.get(key).copied()
+    }
 }
 
 impl PullableFrameProperties<BufferType, BytesMut> for FrameData {
