@@ -9,11 +9,12 @@ features = ["rt", "rt-multi-thread", "macros", "net"]
 
 [dependencies.remotia]
 path = "../../remotia"
-features = ["buffers", "capture", "render", "profilation"]
+features = ["buffers", "capture", "render", "profilation", "serialization"]
 
 [dependencies]
+log = "0.4.19"
 remotia-ffmpeg-codecs = { path = "../../remotia-ffmpeg-codecs" }
 remotia-srt = { path = "../../remotia-srt" }
-log = "0.4.19"
+bincode = "2.0.0-rc.3"
 env_logger = "0.10.0"
 clap = "4.3.3"

@@ -1,8 +1,12 @@
 use clap::Parser;
+use remotia::profilation::loggers::console::ConsoleAverageStatsLogger;
+use remotia::profilation::time::add::TimestampAdder;
+use remotia::serialization::bincode::BincodeDeserializer;
 use remotia::{
     buffers::pool_registry::PoolRegistry,
     pipeline::{component::Component, Pipeline},
     processors::{error_switch::OnErrorSwitch, functional::Function},
+    profilation::time::diff::TimestampDiffCalculator,
     render::winit::WinitRenderer,
 };
 use remotia_ffmpeg_codecs::{decoders::DecoderBuilder, ffi, scaling::ScalerBuilder};
@@ -11,7 +15,7 @@ use remotia_srt::{
     receiver::SRTFrameReceiver,
     srt_tokio::{options::ByteCount, SrtSocket},
 };
-use screen_stream::types::{BufferType::*, Error::*, FrameData};
+use screen_stream::types::{BufferType::*, Error::*, FrameData, Stat::*};
 
 #[derive(Parser, Debug)]
 struct Args {
@@ -39,7 +43,7 @@ async fn main() {
     let pixels_count = (args.width * args.height) as usize;
     let mut registry = PoolRegistry::new();
     registry
-        .register(EncodedFrameBuffer, POOLS_SIZE, pixels_count * 4)
+        .register(SerializedFrameData, POOLS_SIZE, pixels_count * 4)
         .await;
     registry
         .register(DecodedRGBAFrameBuffer, POOLS_SIZE, pixels_count * 4)
@@ -67,7 +71,7 @@ async fn main() {
                 log::warn!("Dropped frame");
                 Some(fd)
             }))
-            .append(registry.get(EncodedFrameBuffer).redeemer().soft())
+            .append(registry.get(SerializedFrameData).redeemer().soft())
             .append(registry.get(DecodedRGBAFrameBuffer).redeemer().soft()),
     )
     .feedable();
@@ -82,10 +86,13 @@ async fn main() {
     let pipeline = Pipeline::<FrameData>::new()
         .link(
             Component::new()
-                .append(registry.get(EncodedFrameBuffer).borrower())
-                .append(SRTFrameReceiver::new(EncodedFrameBuffer, socket))
+                .append(registry.get(SerializedFrameData).borrower())
+                .append(SRTFrameReceiver::new(SerializedFrameData, socket))
+                .append(BincodeDeserializer::new(SerializedFrameData))
+                .append(TimestampDiffCalculator::new(CaptureTime, ReceptionDelay))
+                .append(registry.get(SerializedFrameData).redeemer())
+                .append(TimestampAdder::new(DecodePushTime))
                 .append(decoder_pusher)
-                .append(registry.get(EncodedFrameBuffer).redeemer())
                 .append(OnErrorSwitch::new(&mut error_pipeline)),
         )
         .link(
@@ -93,12 +100,23 @@ async fn main() {
                 .append(registry.get(DecodedRGBAFrameBuffer).borrower())
                 .append(decoder_puller)
                 .append(OnErrorSwitch::new(&mut error_pipeline))
+                .append(TimestampDiffCalculator::new(DecodePushTime, DecodeTime))
                 .append(WinitRenderer::new(
                     DecodedRGBAFrameBuffer,
                     args.width,
                     args.height,
                 ))
+                .append(TimestampDiffCalculator::new(CaptureTime, FrameDelay))
                 .append(registry.get(DecodedRGBAFrameBuffer).redeemer()),
+        )
+        .link(
+            Component::new().append(
+                ConsoleAverageStatsLogger::new()
+                    .header("Statistics")
+                    .log(ReceptionDelay)
+                    .log(FrameDelay)
+                    .log(DecodeTime)
+            ),
         );
 
     let mut handles = Vec::new();

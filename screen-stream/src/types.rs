@@ -1,25 +1,44 @@
 use std::collections::HashMap;
 
-use remotia::{traits::{PullableFrameProperties, BorrowFrameProperties, BorrowMutFrameProperties, FrameError, FrameProperties}, buffers::BytesMut};
+use bincode::{
+    de::Decoder,
+    enc::Encoder,
+    error::{DecodeError, EncodeError},
+    Decode, Encode,
+};
+use remotia::{
+    buffers::BytesMut,
+    traits::{
+        BorrowFrameProperties, BorrowMutFrameProperties, FrameError, FrameProperties,
+        PullableFrameProperties,
+    },
+};
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Encode, Decode)]
 pub enum BufferType {
     CapturedRGBAFrameBuffer,
     EncodedFrameBuffer,
+    SerializedFrameData,
+
     DecodedRGBAFrameBuffer,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Encode, Decode)]
 pub enum Stat {
     CaptureTime,
     EncodePushTime,
     TransmissionStartTime,
+    DecodePushTime,
 
     EncodeTime,
-    TransmissionTime
+    TransmissionTime,
+    DecodeTime,
+
+    FrameDelay,
+    ReceptionDelay,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Encode, Decode)]
 pub enum Error {
     NoFrame,
     CodecError,
@@ -29,7 +48,41 @@ pub enum Error {
 pub struct FrameData {
     statistics: HashMap<Stat, u128>,
     buffers: HashMap<BufferType, BytesMut>,
-    error: Option<Error>
+    error: Option<Error>,
+}
+
+impl Encode for FrameData {
+    fn encode<E: Encoder>(&self, encoder: &mut E) -> Result<(), EncodeError> {
+        Encode::encode(&self.statistics, encoder)?;
+        Encode::encode(&self.error, encoder)?;
+        let mapped_buffers: HashMap<&BufferType, Vec<u8>> = self
+            .buffers
+            .iter()
+            .map(|(key, value)| (key, value.to_vec()))
+            .collect();
+
+        Encode::encode(&mapped_buffers, encoder)?;
+
+        Ok(())
+    }
+}
+
+impl Decode for FrameData {
+    fn decode<D: Decoder>(decoder: &mut D) -> Result<Self, DecodeError> {
+        let statistics: HashMap<Stat, u128> = Decode::decode(decoder)?;
+        let error: Option<Error> = Decode::decode(decoder)?;
+        let mapped_buffers: HashMap<BufferType, Vec<u8>> = Decode::decode(decoder)?;
+        let buffers: HashMap<BufferType, BytesMut> = mapped_buffers
+            .iter()
+            .map(|(key, vector)| (*key, BytesMut::from(&vector[..])))
+            .collect();
+
+        Ok(Self {
+            statistics,
+            buffers,
+            error,
+        })
+    }
 }
 
 impl FrameProperties<Stat, u128> for FrameData {
@@ -73,4 +126,3 @@ impl FrameError<Error> for FrameData {
         self.error
     }
 }
-

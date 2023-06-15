@@ -3,6 +3,7 @@ use std::time::Duration;
 use clap::Parser;
 use remotia::profilation::loggers::console::ConsoleAverageStatsLogger;
 use remotia::profilation::time::diff::TimestampDiffCalculator;
+use remotia::serialization::bincode::BincodeSerializer;
 use remotia::{
     buffers::pool_registry::PoolRegistry,
     capture::scrap::ScrapFrameCapturer,
@@ -26,6 +27,12 @@ struct Args {
 
     #[arg(long, default_value_t=String::from(":9000"))]
     listen_address: String,
+
+    #[arg(long)]
+    stream_width: Option<u32>,
+
+    #[arg(long)]
+    stream_height: Option<u32>,
 }
 
 const POOLS_SIZE: usize = 1;
@@ -41,15 +48,22 @@ async fn main() {
 
     log::info!("Streaming at {}x{}", capturer.width(), capturer.height());
 
-    let width = capturer.width() as usize;
-    let height = capturer.height() as usize;
-    let pixels_count = width * height;
+    let width = capturer.width() as u32;
+    let height = capturer.height() as u32;
+
+    let stream_width = args.stream_width.unwrap_or(width);
+    let stream_height = args.stream_height.unwrap_or(height);
+
     let mut registry = PoolRegistry::new();
+    let pixels_count = (width * height) as usize;
     registry
         .register(CapturedRGBAFrameBuffer, POOLS_SIZE, pixels_count * 4)
         .await;
     registry
         .register(EncodedFrameBuffer, POOLS_SIZE, pixels_count * 4)
+        .await;
+    registry
+        .register(SerializedFrameData, POOLS_SIZE, pixels_count * 4)
         .await;
 
     let (encoder_pusher, encoder_puller) = EncoderBuilder::new()
@@ -60,6 +74,8 @@ async fn main() {
             ScalerBuilder::new()
                 .input_width(width as i32)
                 .input_height(height as i32)
+                .output_width(stream_width as i32)
+                .output_height(stream_height as i32)
                 .input_pixel_format(ffi::AVPixelFormat_AV_PIX_FMT_RGBA)
                 .output_pixel_format(ffi::AVPixelFormat_AV_PIX_FMT_YUV420P)
                 .build(),
@@ -113,12 +129,15 @@ async fn main() {
         .link(
             Component::new()
                 .append(TimestampAdder::new(TransmissionStartTime))
-                .append(SRTFrameSender::new(EncodedFrameBuffer, socket))
+                .append(registry.get(SerializedFrameData).borrower())
+                .append(BincodeSerializer::new(SerializedFrameData))
+                .append(registry.get(EncodedFrameBuffer).redeemer())
+                .append(SRTFrameSender::new(SerializedFrameData, socket))
                 .append(TimestampDiffCalculator::new(
                     TransmissionStartTime,
                     TransmissionTime,
                 ))
-                .append(registry.get(EncodedFrameBuffer).redeemer()),
+                .append(registry.get(SerializedFrameData).redeemer())
         )
         .link(
             Component::new().append(
