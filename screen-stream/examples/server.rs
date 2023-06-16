@@ -7,7 +7,7 @@ use remotia::serialization::bincode::BincodeSerializer;
 use remotia::{
     buffers::pool_registry::PoolRegistry,
     capture::scrap::ScrapFrameCapturer,
-    pipeline::{component::Component, Pipeline},
+    pipeline::{component::Component, registry::PipelineRegistry, Pipeline},
     processors::{error_switch::OnErrorSwitch, functional::Function, ticker::Ticker},
     profilation::time::add::TimestampAdder,
 };
@@ -19,6 +19,8 @@ use remotia_srt::{
     srt_tokio::{options::ByteCount, SrtSocket},
 };
 use screen_stream::types::{BufferType::*, FrameData, Stat::*};
+
+use remotia::register;
 
 #[derive(Parser, Debug)]
 struct Args {
@@ -41,6 +43,12 @@ struct Args {
     codec_options: Vec<String>,
 }
 
+#[derive(PartialEq, Eq, Hash)]
+enum Pipelines {
+    Main,
+    Error,
+}
+
 const POOLS_SIZE: usize = 1;
 
 #[tokio::main]
@@ -60,15 +68,15 @@ async fn main() {
     let stream_width = args.stream_width.unwrap_or(width);
     let stream_height = args.stream_height.unwrap_or(height);
 
-    let mut registry = PoolRegistry::new();
+    let mut pools = PoolRegistry::new();
     let pixels_count = (width * height) as usize;
-    registry
+    pools
         .register(CapturedRGBAFrameBuffer, POOLS_SIZE, pixels_count * 4)
         .await;
-    registry
+    pools
         .register(EncodedFrameBuffer, POOLS_SIZE, pixels_count * 4)
         .await;
-    registry
+    pools
         .register(SerializedFrameData, POOLS_SIZE, pixels_count * 4)
         .await;
 
@@ -96,16 +104,22 @@ async fn main() {
         .options(options)
         .build();
 
-    let mut error_pipeline = Pipeline::<FrameData>::singleton(
-        Component::new()
-            .append(Function::new(|fd| {
-                log::warn!("Dropped frame");
-                Some(fd)
-            }))
-            .append(registry.get(CapturedRGBAFrameBuffer).redeemer().soft())
-            .append(registry.get(EncodedFrameBuffer).redeemer().soft()),
-    )
-    .feedable();
+    let mut pipelines = PipelineRegistry::<FrameData, Pipelines>::new();
+
+    register!(
+        pipelines,
+        Pipelines::Error,
+        Pipeline::<FrameData>::singleton(
+            Component::new()
+                .append(Function::new(|fd| {
+                    log::warn!("Dropped frame");
+                    Some(fd)
+                }))
+                .append(pools.get(CapturedRGBAFrameBuffer).redeemer().soft())
+                .append(pools.get(EncodedFrameBuffer).redeemer().soft()),
+        )
+        .feedable()
+    );
 
     log::info!("Waiting for connection...");
     let socket = SrtSocket::builder()
@@ -115,51 +129,49 @@ async fn main() {
         .await
         .unwrap();
 
-    let pipeline = Pipeline::<FrameData>::new()
-        .link(
-            Component::new()
-                .append(Ticker::new(1000 / args.framerate))
-                .append(registry.get(CapturedRGBAFrameBuffer).borrower())
-                .append(TimestampAdder::new(CaptureTime))
-                .append(capturer)
-                .append(TimestampAdder::new(EncodePushTime))
-                .append(encoder_pusher),
-        )
-        .link(
-            Component::new()
-                .append(registry.get(CapturedRGBAFrameBuffer).redeemer())
-                .append(registry.get(EncodedFrameBuffer).borrower())
-                .append(encoder_puller)
-                .append(TimestampDiffCalculator::new(EncodePushTime, EncodeTime))
-                .append(OnErrorSwitch::new(&mut error_pipeline)),
-        )
-        .link(
-            Component::new()
-                .append(TimestampAdder::new(TransmissionStartTime))
-                .append(registry.get(SerializedFrameData).borrower())
-                .append(BincodeSerializer::new(SerializedFrameData))
-                .append(registry.get(EncodedFrameBuffer).redeemer())
-                .append(SRTFrameSender::new(SerializedFrameData, socket))
-                .append(TimestampDiffCalculator::new(
-                    TransmissionStartTime,
-                    TransmissionTime,
-                ))
-                .append(registry.get(SerializedFrameData).redeemer()),
-        )
-        .link(
-            Component::new().append(
-                ConsoleAverageStatsLogger::new()
-                    .header("Statistics")
-                    .log(EncodeTime)
-                    .log(TransmissionTime),
-            ),
-        );
+    register!(
+        pipelines,
+        Pipelines::Main,
+        Pipeline::<FrameData>::new()
+            .link(
+                Component::new()
+                    .append(Ticker::new(1000 / args.framerate))
+                    .append(pools.get(CapturedRGBAFrameBuffer).borrower())
+                    .append(TimestampAdder::new(CaptureTime))
+                    .append(capturer)
+                    .append(TimestampAdder::new(EncodePushTime))
+                    .append(encoder_pusher),
+            )
+            .link(
+                Component::new()
+                    .append(pools.get(CapturedRGBAFrameBuffer).redeemer())
+                    .append(pools.get(EncodedFrameBuffer).borrower())
+                    .append(encoder_puller)
+                    .append(TimestampDiffCalculator::new(EncodePushTime, EncodeTime))
+                    .append(OnErrorSwitch::new(pipelines.get_mut(&Pipelines::Error))),
+            )
+            .link(
+                Component::new()
+                    .append(TimestampAdder::new(TransmissionStartTime))
+                    .append(pools.get(SerializedFrameData).borrower())
+                    .append(BincodeSerializer::new(SerializedFrameData))
+                    .append(pools.get(EncodedFrameBuffer).redeemer())
+                    .append(SRTFrameSender::new(SerializedFrameData, socket))
+                    .append(TimestampDiffCalculator::new(
+                        TransmissionStartTime,
+                        TransmissionTime,
+                    ))
+                    .append(pools.get(SerializedFrameData).redeemer()),
+            )
+            .link(
+                Component::new().append(
+                    ConsoleAverageStatsLogger::new()
+                        .header("Statistics")
+                        .log(EncodeTime)
+                        .log(TransmissionTime),
+                ),
+            )
+    );
 
-    let mut handles = Vec::new();
-    handles.extend(error_pipeline.run());
-    handles.extend(pipeline.run());
-
-    for handle in handles {
-        handle.await.unwrap();
-    }
+    pipelines.run().await;
 }
