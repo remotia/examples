@@ -1,0 +1,1 @@
+export LIBCLANG_PATH=${PWD}/target/vcpkg/packages/llvm_x64-windows-static-md/bin/
