@@ -4,7 +4,7 @@ use remotia::{
     pipeline::{component::Component, Pipeline},
     processors::functional::Function,
     render::winit::WinitRenderer,
-    traits::BorrowableFrameProperties,
+    traits::BorrowMutFrameProperties,
     transmission::receiver::TcpFrameReceiver,
 };
 use screen_mirror::{BufferType, FrameData};
