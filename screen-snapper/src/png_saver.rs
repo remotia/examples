@@ -41,17 +41,7 @@ where
             value
         };
 
-        log::debug!(
-            "Pixels mean: {}",
-            pixels.iter().map(|value| *value as usize).sum::<usize>() / pixels.len()
-        );
-
         let image = RgbImage::from_raw(self.width, self.height, pixels).unwrap();
-
-        log::debug!(
-            "Written image mean: {}",
-            image.iter().map(|value| *value as usize).sum::<usize>() / image.len()
-        );
 
         image.save(path).unwrap();
 
