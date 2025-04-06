@@ -3,6 +3,11 @@ name = "screen-recorder"
 version = "0.1.0"
 edition = "2024"
 
+[dependencies]
+async-trait = "0.1.88"
+bon = "3.5.1"
+image = "0.25.6"
+
 [dependencies.tokio]
 version = "1.44.2"
 features = ["rt-multi-thread"]
