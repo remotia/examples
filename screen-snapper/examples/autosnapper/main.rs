@@ -4,7 +4,7 @@ use remotia::{
     pipeline::{Pipeline, component::Component},
     processors::ticker::Ticker,
 };
-use screen_recorder::{
+use screen_snapper::{
     png_saver::PNGBufferSaver,
     xcap_capturer::{XCapCapturer, xcap_utils},
 };
@@ -15,10 +15,11 @@ async fn main() {
     env_logger::init();
 
     let monitor_id = 0;
+    let (height, width) = xcap_utils::display_size(monitor_id);
 
     let pipeline = Pipeline::<RecorderData>::new()
-        .link(capturer(monitor_id))
-        .link(saver(monitor_id));
+        .link(capturer(monitor_id, height, width))
+        .link(saver(height, width));
 
     for handle in pipeline.run() {
         handle
@@ -27,12 +28,12 @@ async fn main() {
     }
 }
 
-fn capturer(monitor_id: usize) -> Component<RecorderData> {
+fn capturer(monitor_id: usize, height: u32, width: u32) -> Component<RecorderData> {
     Component::new()
         .append(Ticker::new(1000))
         .append(BufferAllocator::new(
             Buffers::CapturedScreenBuffer,
-            xcap_utils::expected_buffer_size_for_monitor(monitor_id),
+            height as usize * width as usize * 3,
         ))
         .append(
             XCapCapturer::builder()
@@ -42,9 +43,7 @@ fn capturer(monitor_id: usize) -> Component<RecorderData> {
         )
 }
 
-fn saver(monitor_id: usize) -> Component<RecorderData> {
-    let (height, width) = xcap_utils::display_size(monitor_id);
-
+fn saver(height: u32, width: u32) -> Component<RecorderData> {
     Component::new().append(
         PNGBufferSaver::builder()
             .buffer_key(Buffers::CapturedScreenBuffer)
