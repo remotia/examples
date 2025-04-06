@@ -25,8 +25,6 @@ where
         let wayshot_connection = WayshotConnection::new().unwrap();
         let rgba_image = wayshot_connection.screenshot_all(false).unwrap();
 
-        rgba_image.save("screenshots/captured.png").unwrap();
-
         // Remove the alpha channel
         log::debug!("Removing alpha channel...");
         let rgb_image = DynamicImage::ImageRgba8(rgba_image).into_rgb8();
