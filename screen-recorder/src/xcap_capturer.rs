@@ -60,6 +60,7 @@ where
             .pull(&self.buffer_key)
             .expect("No buffer to pull from frame data");
 
+        buffer.clear();
         buffer.put_slice(rgb_image.as_raw());
 
         dto.push(self.buffer_key, buffer);

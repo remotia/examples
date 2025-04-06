@@ -4,11 +4,11 @@ use remotia::{
     pipeline::{Pipeline, component::Component},
     processors::ticker::Ticker,
 };
-use screen_recorder::{png_saver::PNGBufferSaver, wayshot_capturer::WayshotCapturer};
+use screen_recorder::{
+    png_saver::PNGBufferSaver,
+    xcap_capturer::{XCapCapturer, xcap_utils},
+};
 mod data;
-
-const WIDTH: u32 = 1440;
-const HEIGHT: u32 = 900;
 
 #[tokio::main]
 async fn main() {
@@ -32,22 +32,25 @@ fn capturer(monitor_id: usize) -> Component<RecorderData> {
         .append(Ticker::new(1000))
         .append(BufferAllocator::new(
             Buffers::CapturedScreenBuffer,
-            WIDTH as usize * HEIGHT as usize * 3,
+            xcap_utils::expected_buffer_size_for_monitor(monitor_id),
         ))
         .append(
-            WayshotCapturer::builder()
+            XCapCapturer::builder()
                 .buffer_key(Buffers::CapturedScreenBuffer)
+                .monitor_id(monitor_id)
                 .build(),
         )
 }
 
 fn saver(monitor_id: usize) -> Component<RecorderData> {
+    let (height, width) = xcap_utils::display_size(monitor_id);
+
     Component::new().append(
         PNGBufferSaver::builder()
             .buffer_key(Buffers::CapturedScreenBuffer)
             .path("./screenshots/")
-            .height(HEIGHT)
-            .width(WIDTH)
+            .height(height)
+            .width(width)
             .build(),
     )
 }

@@ -41,8 +41,6 @@ where
             value
         };
 
-        // let pixels = pixels.iter().map(|value| value * 100).collect::<Vec<u8>>();
-
         log::debug!(
             "Pixels mean: {}",
             pixels.iter().map(|value| *value as usize).sum::<usize>() / pixels.len()
