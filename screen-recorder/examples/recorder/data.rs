@@ -5,7 +5,7 @@ use remotia::{
 
 #[derive(Default, Debug)]
 pub struct RecorderData {
-    screen_buffer: Option<BytesMut>,
+    pub(crate) screen_buffer: Option<BytesMut>,
 }
 
 #[derive(Clone, Copy)]

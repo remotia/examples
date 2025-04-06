@@ -3,7 +3,7 @@ use remotia::{
     buffers::BufferAllocator,
     capture::scrap::ScrapFrameCapturer,
     pipeline::{Pipeline, component::Component},
-    processors::ticker::Ticker,
+    processors::{functional::Function, ticker::Ticker},
 };
 use screen_recorder::png_saver::PNGBufferSaver;
 mod data;
@@ -15,6 +15,8 @@ struct DisplaySize {
 
 #[tokio::main]
 async fn main() {
+    env_logger::init();
+
     let (capturer, display_size) = capturer();
     let saver = saver(&display_size);
 
@@ -41,7 +43,19 @@ fn capturer() -> (Component<RecorderData>, DisplaySize) {
             Buffers::CapturedScreenBuffer,
             capturer.buffer_size(),
         ))
-        .append(capturer);
+        .append(capturer)
+        .append(Function::new(|frame_data: RecorderData| {
+            let sum = frame_data
+                .screen_buffer
+                .clone()
+                .unwrap()
+                .iter()
+                .map(|value| *value as usize)
+                .sum::<usize>();
+
+            log::info!("Buffer sum: {}", sum);
+            Some(frame_data)
+        }));
 
     (component, display_size)
 }
