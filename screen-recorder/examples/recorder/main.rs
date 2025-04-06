@@ -1,26 +1,24 @@
 use data::{Buffers, RecorderData};
 use remotia::{
     buffers::BufferAllocator,
-    capture::scrap::ScrapFrameCapturer,
     pipeline::{Pipeline, component::Component},
-    processors::{functional::Function, ticker::Ticker},
+    processors::ticker::Ticker,
 };
-use screen_recorder::png_saver::PNGBufferSaver;
+use screen_recorder::{
+    png_saver::PNGBufferSaver,
+    xcap_capturer::{XCapCapturer, xcap_utils},
+};
 mod data;
-
-struct DisplaySize {
-    height: usize,
-    width: usize,
-}
 
 #[tokio::main]
 async fn main() {
     env_logger::init();
 
-    let (capturer, display_size) = capturer();
-    let saver = saver(&display_size);
+    let monitor_id = 0;
 
-    let pipeline = Pipeline::<RecorderData>::new().link(capturer).link(saver);
+    let pipeline = Pipeline::<RecorderData>::new()
+        .link(capturer(monitor_id))
+        .link(saver(monitor_id));
 
     for handle in pipeline.run() {
         handle
@@ -29,44 +27,30 @@ async fn main() {
     }
 }
 
-fn capturer() -> (Component<RecorderData>, DisplaySize) {
-    let mut capturer = ScrapFrameCapturer::new_from_primary(Buffers::CapturedScreenBuffer);
-
-    let display_size = DisplaySize {
-        height: capturer.height(),
-        width: capturer.width(),
-    };
-
-    let component = Component::new()
+fn capturer(monitor_id: usize) -> Component<RecorderData> {
+    Component::new()
         .append(Ticker::new(1000))
         .append(BufferAllocator::new(
             Buffers::CapturedScreenBuffer,
-            capturer.buffer_size(),
+            xcap_utils::expected_buffer_size_for_monitor(monitor_id),
         ))
-        .append(capturer)
-        .append(Function::new(|frame_data: RecorderData| {
-            let sum = frame_data
-                .screen_buffer
-                .clone()
-                .unwrap()
-                .iter()
-                .map(|value| *value as usize)
-                .sum::<usize>();
-
-            log::info!("Buffer sum: {}", sum);
-            Some(frame_data)
-        }));
-
-    (component, display_size)
+        .append(
+            XCapCapturer::builder()
+                .buffer_key(Buffers::CapturedScreenBuffer)
+                .monitor_id(monitor_id)
+                .build(),
+        )
 }
 
-fn saver(display_size: &DisplaySize) -> Component<RecorderData> {
+fn saver(monitor_id: usize) -> Component<RecorderData> {
+    let (height, width) = xcap_utils::display_size(monitor_id);
+
     Component::new().append(
         PNGBufferSaver::builder()
             .buffer_key(Buffers::CapturedScreenBuffer)
             .path("./screenshots/")
-            .height(display_size.height)
-            .width(display_size.width)
+            .height(height)
+            .width(width)
             .build(),
     )
 }

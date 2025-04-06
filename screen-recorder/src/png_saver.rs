@@ -11,8 +11,8 @@ pub struct PNGBufferSaver<K> {
     #[builder(field = 0)]
     current_id: usize,
 
-    height: usize,
-    width: usize,
+    height: u32,
+    width: u32,
 
     buffer_key: K,
     path: &'static str,
@@ -30,6 +30,8 @@ where
 
         let path = format!("{}/{}.png", self.path, self.current_id);
 
+        log::info!("Saving screenshot to {path}...");
+
         let pixels = {
             let buffer = frame_data
                 .pull(&self.buffer_key)
@@ -39,7 +41,7 @@ where
             value
         };
 
-        RgbImage::from_raw(self.width as u32, self.height as u32, pixels)
+        RgbImage::from_raw(self.width, self.height, pixels)
             .unwrap()
             .save(path)
             .unwrap();
