@@ -41,10 +41,21 @@ where
             value
         };
 
-        RgbImage::from_raw(self.width, self.height, pixels)
-            .unwrap()
-            .save(path)
-            .unwrap();
+        // let pixels = pixels.iter().map(|value| value * 100).collect::<Vec<u8>>();
+
+        log::debug!(
+            "Pixels mean: {}",
+            pixels.iter().map(|value| *value as usize).sum::<usize>() / pixels.len()
+        );
+
+        let image = RgbImage::from_raw(self.width, self.height, pixels).unwrap();
+
+        log::debug!(
+            "Written image mean: {}",
+            image.iter().map(|value| *value as usize).sum::<usize>() / image.len()
+        );
+
+        image.save(path).unwrap();
 
         Some(frame_data)
     }
