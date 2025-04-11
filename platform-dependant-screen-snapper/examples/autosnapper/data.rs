@@ -4,7 +4,7 @@ use remotia::{
 };
 
 #[derive(Default, Debug)]
-pub struct RecorderData {
+pub struct SnapperData {
     pub(crate) screen_buffer: Option<BytesMut>,
 }
 
@@ -13,7 +13,7 @@ pub enum Buffers {
     CapturedScreenBuffer,
 }
 
-impl BorrowMutFrameProperties<Buffers, BytesMut> for RecorderData {
+impl BorrowMutFrameProperties<Buffers, BytesMut> for SnapperData {
     fn get_mut_ref(&mut self, key: &Buffers) -> Option<&mut BytesMut> {
         match key {
             Buffers::CapturedScreenBuffer => self.screen_buffer.as_mut(),
@@ -21,7 +21,7 @@ impl BorrowMutFrameProperties<Buffers, BytesMut> for RecorderData {
     }
 }
 
-impl PullableFrameProperties<Buffers, BytesMut> for RecorderData {
+impl PullableFrameProperties<Buffers, BytesMut> for SnapperData {
     fn push(&mut self, key: Buffers, value: BytesMut) {
         match key {
             Buffers::CapturedScreenBuffer => self.screen_buffer.replace(value),

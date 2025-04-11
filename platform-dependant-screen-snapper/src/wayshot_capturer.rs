@@ -12,6 +12,20 @@ pub struct WayshotCapturer<K> {
     buffer_key: K,
 }
 
+pub mod wayshot_utils {
+    use super::*;
+    pub fn display_size() -> (u32, u32) {
+        let wayshot_connection = WayshotConnection::new().unwrap();
+        let dimensions = &wayshot_connection
+            .get_all_outputs()
+            .first()
+            .unwrap()
+            .dimensions;
+
+        (dimensions.height as u32, dimensions.width as u32)
+    }
+}
+
 #[async_trait]
 impl<K, F> FrameProcessor<F> for WayshotCapturer<K>
 where
