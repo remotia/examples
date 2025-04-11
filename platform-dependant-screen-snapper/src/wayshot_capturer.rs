@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use bon::Builder;
-use image::DynamicImage;
+use image_024::DynamicImage;
 use libwayshot::WayshotConnection;
 use remotia::{
     buffers::{BufMut, BytesMut},

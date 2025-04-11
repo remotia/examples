@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 use bon::Builder;
-use image::DynamicImage;
+use image_025::DynamicImage;
 use remotia::{
     buffers::{BufMut, BytesMut},
     traits::{FrameProcessor, PullableFrameProperties},
