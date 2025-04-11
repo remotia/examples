@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [features]
-default = ["wayshot"]
+default = ["xcap"]
 xcap = ["dep:xcap"]
 wayshot = ["dep:libwayshot", "dep:libwayshot_image"]
 
