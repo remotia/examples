@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use bon::Builder;
-use image_024::DynamicImage;
 use libwayshot::WayshotConnection;
+use libwayshot_image::DynamicImage;
 use remotia::{
     buffers::{BufMut, BytesMut},
     traits::{FrameProcessor, PullableFrameProperties},
