@@ -17,6 +17,8 @@ async fn main() {
     let monitor_id = 0;
     let (height, width) = xcap_utils::display_size(monitor_id);
 
+    log::debug!("Detected display size: {}x{}", width, height);
+
     let pipeline = Pipeline::<RecorderData>::new()
         .link(capturer(monitor_id, height, width))
         .link(saver(height, width));
