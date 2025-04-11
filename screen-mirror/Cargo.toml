@@ -10,7 +10,7 @@ features = ["rt", "rt-multi-thread", "macros", "net"]
 [dependencies.remotia]
 # git = "https://github.com/remotia/remotia"
 # branch = "generic_data"
-path = "../../remotia"
+path = "../../remotia/crates/remotia"
 default-features = false
 features = ["buffers", "capture", "profilation", "transmission", "render"]
 
