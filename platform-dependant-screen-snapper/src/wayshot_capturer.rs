@@ -1,7 +1,6 @@
 use async_trait::async_trait;
 use bon::Builder;
 use libwayshot::WayshotConnection;
-use libwayshot_image::DynamicImage;
 use remotia::{
     buffers::{BufMut, BytesMut},
     traits::{FrameProcessor, PullableFrameProperties},
@@ -20,9 +19,9 @@ pub mod wayshot_utils {
             .get_all_outputs()
             .first()
             .unwrap()
-            .dimensions;
+            .physical_size;
 
-        (dimensions.height as u32, dimensions.width as u32)
+        (dimensions.height, dimensions.width)
     }
 }
 
@@ -41,7 +40,7 @@ where
 
         // Remove the alpha channel
         log::debug!("Removing alpha channel...");
-        let rgb_image = DynamicImage::ImageRgba8(rgba_image).into_rgb8();
+        let rgb_image = rgba_image.into_rgb8();
 
         // Write data into the DTO buffer
         log::debug!("Writing data to DTO...");

@@ -4,9 +4,9 @@ version = "0.1.0"
 edition = "2024"
 
 [features]
-default = ["xcap"]
+default = ["wayshot"]
 xcap = ["dep:xcap"]
-wayshot = ["dep:libwayshot", "dep:libwayshot_image"]
+wayshot = ["dep:libwayshot"]
 
 [dependencies]
 async-trait = "0.1.88"
@@ -15,8 +15,8 @@ env_logger = "0.11.8"
 log = "0.4.27"
 image = "0.25"
 
-libwayshot = { version = "0.3.0", optional = true }
-libwayshot_image = { package = "image", version = "0.24", optional = true }
+# Using a specific libwayshot commit as the version on crate is not updated to work with the latest version of image.rs
+libwayshot = { git = "https://github.com/waycrate/wayshot", rev = "7509281", optional = true }
 
 xcap = { version = "0.4.1", optional = true }
 
