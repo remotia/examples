@@ -21,7 +21,7 @@ pub mod wayshot_utils {
             .unwrap()
             .physical_size;
 
-        (dimensions.height as u32, dimensions.width as u32)
+        (dimensions.height, dimensions.width)
     }
 }
 
