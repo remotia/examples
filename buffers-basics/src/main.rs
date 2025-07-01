@@ -1,9 +1,11 @@
 use log::info;
 use remotia::{
-    buffers::pool::BuffersPool, pipeline::{component::Component, Pipeline}, processors::{functional::Function, ticker::Ticker}
+    buffers::pool::BuffersPool,
+    pipeline::{Pipeline, component::Component},
+    processors::ticker::Ticker,
 };
 
-use crate::data::{Buffer, FrameData};
+use crate::data::{Buffer, FrameData, FrameDataAppends};
 
 mod data;
 
@@ -18,14 +20,19 @@ async fn main() {
         .link(
             Component::new()
                 .append(Ticker::new(1000))
-                .append(Function::new(FrameData::print_buffer))
+                .set_phase(data::Phase::PreBorrow)
+                .print_buffer()
                 .append(pool.borrower())
-                .append(Function::new(FrameData::print_buffer))
-        ).link(
+                .set_phase(data::Phase::PostBorrow)
+                .print_buffer(),
+        )
+        .link(
             Component::new()
-                .append(Function::new(FrameData::print_buffer))
+                .set_phase(data::Phase::PreRedeem)
+                .print_buffer()
                 .append(pool.redeemer())
-                .append(Function::new(FrameData::print_buffer))
+                .set_phase(data::Phase::PostRedeem)
+                .print_buffer(),
         )
         .run();
 
