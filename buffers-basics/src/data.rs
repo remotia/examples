@@ -1,11 +1,9 @@
-use std::collections::HashMap;
-
-use remotia::buffers::{BytesMut, buffers_map};
+use remotia::buffers::{BuffersMap, BytesMut, buffers_map};
 
 #[derive(Debug, Default)]
 #[buffers_map(current_buffers)]
 pub struct FrameData {
-    current_buffers: HashMap<Buffer, BytesMut>,
+    current_buffers: BuffersMap<Buffer>,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]

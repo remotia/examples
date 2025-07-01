@@ -18,12 +18,14 @@ async fn main() {
         .link(
             Component::new()
                 .append(Ticker::new(1000))
+                .append(Function::new(FrameData::print_buffer))
                 .append(pool.borrower())
                 .append(Function::new(FrameData::print_buffer))
         ).link(
             Component::new()
                 .append(Function::new(FrameData::print_buffer))
                 .append(pool.redeemer())
+                .append(Function::new(FrameData::print_buffer))
         )
         .run();
 
