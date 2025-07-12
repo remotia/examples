@@ -8,7 +8,9 @@ version = "1.44.2"
 features = ["rt-multi-thread"]
 
 [dependencies.remotia]
-path = "../../remotia/crates/remotia"
+# path = "../../remotia/crates/remotia"
+git = "https://github.com/remotia/remotia"
+branch = "cargo/version_0.1.2"
 features = ["buffers"]
 
 [dependencies]

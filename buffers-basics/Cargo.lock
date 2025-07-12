@@ -494,7 +494,8 @@ checksum = "2b15c43186be67a4fd63bee50d0303afffcef381492ebe2c5d87f324e1b8815c"
 
 [[package]]
 name = "remotia"
-version = "0.1.0"
+version = "0.1.2"
+source = "git+https://github.com/remotia/remotia?branch=cargo%2Fversion_0.1.2#eaac495125c25a05133920c88cce197cb08b2034"
 dependencies = [
  "async-trait",
  "bytes",
@@ -511,7 +512,8 @@ dependencies = [
 
 [[package]]
 name = "remotia-buffer-utils"
-version = "0.1.1"
+version = "0.1.2"
+source = "git+https://github.com/remotia/remotia?branch=cargo%2Fversion_0.1.2#eaac495125c25a05133920c88cce197cb08b2034"
 dependencies = [
  "async-trait",
  "bytes",
@@ -522,7 +524,8 @@ dependencies = [
 
 [[package]]
 name = "remotia-buffer-utils-macros"
-version = "0.1.0"
+version = "0.1.1"
+source = "git+https://github.com/remotia/remotia?branch=cargo%2Fversion_0.1.2#eaac495125c25a05133920c88cce197cb08b2034"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -532,6 +535,7 @@ dependencies = [
 [[package]]
 name = "remotia-core"
 version = "0.1.1"
+source = "git+https://github.com/remotia/remotia?branch=cargo%2Fversion_0.1.2#eaac495125c25a05133920c88cce197cb08b2034"
 dependencies = [
  "async-trait",
  "bytes",
