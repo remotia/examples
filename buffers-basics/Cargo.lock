@@ -494,8 +494,9 @@ checksum = "2b15c43186be67a4fd63bee50d0303afffcef381492ebe2c5d87f324e1b8815c"
 
 [[package]]
 name = "remotia"
-version = "0.1.2"
-source = "git+https://github.com/remotia/remotia?branch=cargo%2Fversion_0.1.2#eaac495125c25a05133920c88cce197cb08b2034"
+version = "0.1.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ae322354c2d23bb7ea687b3291d0e01dd7da484bd6398b520ace8a56e4e0a663"
 dependencies = [
  "async-trait",
  "bytes",
@@ -513,7 +514,8 @@ dependencies = [
 [[package]]
 name = "remotia-buffer-utils"
 version = "0.1.2"
-source = "git+https://github.com/remotia/remotia?branch=cargo%2Fversion_0.1.2#eaac495125c25a05133920c88cce197cb08b2034"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8c6c91d1a2aab608fb3f3260a8a317c0223f36f0ef25a6e5fabf9b203b3d2cca"
 dependencies = [
  "async-trait",
  "bytes",
@@ -525,7 +527,8 @@ dependencies = [
 [[package]]
 name = "remotia-buffer-utils-macros"
 version = "0.1.1"
-source = "git+https://github.com/remotia/remotia?branch=cargo%2Fversion_0.1.2#eaac495125c25a05133920c88cce197cb08b2034"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bdc57b3c9856f9a6f09e4a4c3d8f253d3b7cfcc9ac3d8fc2fa1dc9e6e7fc0f66"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -534,8 +537,9 @@ dependencies = [
 
 [[package]]
 name = "remotia-core"
-version = "0.1.1"
-source = "git+https://github.com/remotia/remotia?branch=cargo%2Fversion_0.1.2#eaac495125c25a05133920c88cce197cb08b2034"
+version = "0.1.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "000623a1052b508e9ceb49196fc005117353b1be7937bb185243b950e900135d"
 dependencies = [
  "async-trait",
  "bytes",
