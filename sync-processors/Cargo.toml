@@ -1,0 +1,19 @@
+[package]
+name = "sync-processors"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies.tokio]
+version = "1.44.2"
+features = ["rt-multi-thread"]
+
+[dependencies.remotia]
+path = "../../remotia/crates/remotia/"
+# version = "0.1.3"
+features = ["buffers"]
+
+[dependencies]
+env_logger = "0.11.8"
+log = "0.4.27"
+derive-new = "0.7.0"
+rand = "0.9.1"
