@@ -7,7 +7,7 @@ use remotia::{
 };
 
 use crate::{
-    processors::RandomGenerator,
+    processors::{DeltaEncoder, RandomGenerator},
     types::{Buffer, FrameData},
 };
 
@@ -19,8 +19,10 @@ async fn main() {
     env_logger::init();
     info!("Hello World! I am a simple sync processors example.");
 
-    let full_pool = BuffersPool::new(Buffer::Full, 2, 4).await;
-    let delta_pool = BuffersPool::new(Buffer::Delta, 2, 4).await;
+    let buffers_size = 4;
+
+    let full_pool = BuffersPool::new(Buffer::Full, 2, buffers_size).await;
+    let delta_pool = BuffersPool::new(Buffer::Delta, 2, buffers_size).await;
 
     let handles = Pipeline::<FrameData>::new()
         .link(
@@ -31,11 +33,22 @@ async fn main() {
                     Buffer::Full,
                 )))
                 .closure(|fd: FrameData| {
+                    log::info!("Random generation performed");
                     fd.print_buffers();
                     Some(fd)
                 })
-                .append(full_pool.redeemer())
-                .append(delta_pool.borrower()), // .append(DeltaEncoder)
+                .append(delta_pool.borrower())
+                .append(SyncProcessorWrapper::new(DeltaEncoder::new(
+                    Buffer::Full,
+                    Buffer::Delta,
+                    buffers_size,
+                )))
+                .closure(|fd: FrameData| {
+                    log::info!("Delta encoding performed");
+                    fd.print_buffers();
+                    Some(fd)
+                })
+                .append(full_pool.redeemer()),
         )
         .link(
             Component::new()
