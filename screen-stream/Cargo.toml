@@ -5,8 +5,9 @@ edition = "2021"
 
 [package.metadata.vcpkg]
 dependencies = [
-    "llvm:x64-windows-static-md",
-    "ffmpeg[x264,vpx]:x64-windows-static-md",
+    # "llvm:x64-windows-static-md",
+    # "ffmpeg[x264,vpx]:x64-windows-static-md",
+    "ffmpeg[x264]",
 ]
 git = "https://github.com/microsoft/vcpkg"
 branch = "master"
@@ -16,13 +17,21 @@ version = "1.28.2"
 features = ["rt", "rt-multi-thread", "macros", "net"]
 
 [dependencies.remotia]
-path = "../../remotia/crates/remotia/"
+version = "0.1.3"
 features = ["buffers", "capture", "render", "profilation", "serialization"]
+
+[dependencies.remotia-ffmpeg-codecs]
+path = "../../remotia-ffmpeg-codecs"
+# git = "https://github.com/remotia/remotia-ffmpeg-codecs"
+# branch = "flushing_improvements"
+
+[dependencies.remotia-srt]
+path = "../../remotia-srt"
+# git = "https://github.com/remotia/remotia-srt"
+# branch = "master"
 
 [dependencies]
 log = "0.4.19"
-remotia-ffmpeg-codecs = { path = "../../remotia-ffmpeg-codecs" }
-remotia-srt = { path = "../../remotia-srt" }
 bincode = "2.0.0-rc.3"
 env_logger = "0.10.0"
 clap = "4.3.3"
