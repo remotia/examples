@@ -3,7 +3,6 @@ use std::time::Duration;
 use clap::Parser;
 use remotia::profilation::loggers::console::ConsoleAverageStatsLogger;
 use remotia::profilation::time::diff::TimestampDiffCalculator;
-use remotia::serialization::bincode::BincodeSerializer;
 use remotia::{
     buffers::pool_registry::PoolRegistry,
     capture::scrap::ScrapFrameCapturer,
@@ -11,13 +10,11 @@ use remotia::{
     processors::{error_switch::OnErrorSwitch, functional::Function, ticker::Ticker},
     profilation::time::add::TimestampAdder,
 };
+use remotia_ffmpeg_codecs::encoders::fillers::rgba::RGBAFrameFiller;
 use remotia_ffmpeg_codecs::{
     encoders::EncoderBuilder, ffi, options::Options, scaling::ScalerBuilder,
 };
-use remotia_srt::{
-    sender::SRTFrameSender,
-    srt_tokio::{options::ByteCount, SrtSocket},
-};
+use remotia_srt::{options::ByteCount, sender::SRTFrameSender, SrtSocket};
 use screen_stream::types::{BufferType::*, FrameData, Stat::*};
 
 use remotia::register;
@@ -89,8 +86,7 @@ async fn main() {
     }
     let (encoder_pusher, encoder_puller) = EncoderBuilder::new()
         .codec_id(&args.codec_id)
-        .rgba_buffer_key(CapturedRGBAFrameBuffer)
-        .encoded_buffer_key(EncodedFrameBuffer)
+        .filler(RGBAFrameFiller::new(CapturedRGBAFrameBuffer))
         .scaler(
             ScalerBuilder::new()
                 .input_width(width as i32)
@@ -154,9 +150,8 @@ async fn main() {
                 Component::new()
                     .append(TimestampAdder::new(TransmissionStartTime))
                     .append(pools.get(SerializedFrameData).borrower())
-                    .append(BincodeSerializer::new(SerializedFrameData))
                     .append(pools.get(EncodedFrameBuffer).redeemer())
-                    .append(SRTFrameSender::new(SerializedFrameData, socket))
+                    .append(SRTFrameSender::from_socket(socket))
                     .append(TimestampDiffCalculator::new(
                         TransmissionStartTime,
                         TransmissionTime,

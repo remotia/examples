@@ -2,7 +2,6 @@ use clap::Parser;
 use remotia::pipeline::registry::PipelineRegistry;
 use remotia::profilation::loggers::console::ConsoleAverageStatsLogger;
 use remotia::profilation::time::add::TimestampAdder;
-use remotia::serialization::bincode::BincodeDeserializer;
 use remotia::{
     buffers::pool_registry::PoolRegistry,
     pipeline::{component::Component, Pipeline},
@@ -13,12 +12,13 @@ use remotia::{
 use remotia_ffmpeg_codecs::{decoders::DecoderBuilder, ffi, scaling::ScalerBuilder};
 
 use remotia::register;
+use remotia_srt::options::ByteCount;
+use remotia_srt::SrtSocket;
 use remotia_srt::{
     receiver::SRTFrameReceiver,
-    srt_tokio::{options::ByteCount, SrtSocket},
 };
 
-use screen_stream::types::{BufferType::*, Error::*, FrameData, Stat::*};
+use screen_stream::types::{BufferType::*, FrameData, Stat::*};
 
 #[derive(Parser, Debug)]
 struct Args {
@@ -63,8 +63,6 @@ async fn main() {
 
     let (decoder_pusher, decoder_puller) = DecoderBuilder::new()
         .codec_id(&args.codec_id)
-        .encoded_buffer_key(EncodedFrameBuffer)
-        .decoded_buffer_key(DecodedRGBAFrameBuffer)
         .scaler(
             ScalerBuilder::new()
                 .input_width(args.width as i32)
@@ -73,8 +71,6 @@ async fn main() {
                 .output_pixel_format(ffi::AVPixelFormat_AV_PIX_FMT_BGRA)
                 .build(),
         )
-        .drain_error(NoFrame)
-        .codec_error(CodecError)
         .build();
 
     let mut pipelines = PipelineRegistry::<FrameData, Pipelines>::new();
@@ -108,8 +104,7 @@ async fn main() {
             .link(
                 Component::new()
                     .append(pools.get(SerializedFrameData).borrower())
-                    .append(SRTFrameReceiver::new(SerializedFrameData, socket))
-                    .append(BincodeDeserializer::new(SerializedFrameData))
+                    .append(SRTFrameReceiver::from_socket(socket))
                     .append(TimestampDiffCalculator::new(CaptureTime, ReceptionDelay))
                     .append(pools.get(SerializedFrameData).redeemer())
                     .append(TimestampAdder::new(DecodePushTime))

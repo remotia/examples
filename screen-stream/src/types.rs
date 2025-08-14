@@ -1,11 +1,5 @@
 use std::collections::HashMap;
 
-use bincode::{
-    de::Decoder,
-    enc::Encoder,
-    error::{DecodeError, EncodeError},
-    Decode, Encode,
-};
 use remotia::{
     buffers::BytesMut,
     traits::{
@@ -13,8 +7,10 @@ use remotia::{
         PullableFrameProperties,
     },
 };
+use remotia_ffmpeg_codecs::FFMpegCodec;
+use remotia_srt::SRTTransmission;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Encode, Decode)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum BufferType {
     CapturedRGBAFrameBuffer,
     EncodedFrameBuffer,
@@ -23,7 +19,7 @@ pub enum BufferType {
     DecodedRGBAFrameBuffer,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Encode, Decode)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Stat {
     CaptureTime,
     EncodePushTime,
@@ -38,7 +34,7 @@ pub enum Stat {
     ReceptionDelay,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Encode, Decode)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Error {
     NoFrame,
     CodecError,
@@ -51,6 +47,7 @@ pub struct FrameData {
     error: Option<Error>,
 }
 
+/* 
 impl Encode for FrameData {
     fn encode<E: Encoder>(&self, encoder: &mut E) -> Result<(), EncodeError> {
         Encode::encode(&self.statistics, encoder)?;
@@ -84,6 +81,7 @@ impl Decode for FrameData {
         })
     }
 }
+*/
 
 impl FrameProperties<Stat, u128> for FrameData {
     fn set(&mut self, key: Stat, value: u128) {
@@ -124,5 +122,57 @@ impl FrameError<Error> for FrameData {
 
     fn get_error(&self) -> Option<Error> {
         self.error
+    }
+}
+
+impl SRTTransmission for FrameData {
+    fn report_receive_error(&mut self, error: std::io::Error) {
+        todo!()
+    }
+
+    fn report_reception_delay(&mut self, value: u128) {
+        todo!()
+    }
+
+    fn deserialize_packet(&mut self, data: &remotia::buffers::Bytes) {
+        todo!()
+    }
+
+    fn serialize_packet(&self) -> remotia::buffers::Bytes {
+        todo!()
+    }
+}
+
+impl FFMpegCodec for FrameData {
+    fn write_packet_data(&mut self, packet_data: &[u8]) {
+        todo!()
+    }
+
+    fn get_packet_data_buffer(&self) -> &[u8] {
+        todo!()
+    }
+
+    fn write_decoded_buffer(&mut self, data: &[u8]) {
+        todo!()
+    }
+
+    fn report_flush_error(&mut self) {
+        todo!()
+    }
+
+    fn report_codec_error(&mut self) {
+        todo!()
+    }
+
+    fn report_decoder_drain_error(&mut self) {
+        todo!()
+    }
+
+    fn set_frame_id(&mut self, frame_id: i64) {
+        todo!()
+    }
+
+    fn get_frame_id(&self) -> i64 {
+        todo!()
     }
 }
