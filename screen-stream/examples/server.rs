@@ -146,8 +146,8 @@ async fn main() {
             .link(
                 Component::new()
                     .append(TimestampAdder::new(TransmissionStartTime))
-                    .append(pools.get(EncodedPacketBuffer).redeemer())
                     .append(SRTFrameSender::from_socket(socket))
+                    .append(pools.get(EncodedPacketBuffer).redeemer())
                     .append(TimestampDiffCalculator::new(
                         TransmissionStartTime,
                         TransmissionTime,

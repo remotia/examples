@@ -29,6 +29,7 @@ impl SRTTransmission for FrameData {
 
         self.set(Stat::CaptureTime, serialized.frame_id);
         for (key, vector) in serialized.mapped_buffers.iter() {
+            log::debug!("Deserializing buffer {:?} ({} bytes)...", key, vector.len());
             self.buffers.get_mut(key).unwrap().put(vector.as_slice());
         }
     }
@@ -37,7 +38,10 @@ impl SRTTransmission for FrameData {
         let mapped_buffers: HashMap<BufferType, Vec<u8>> = self
             .buffers
             .iter()
-            .map(|(key, value)| (key.clone(), value.to_vec()))
+            .map(|(key, value)| {
+                log::debug!("Serializing buffer {:?} ({} bytes)...", key, value.len());
+                (key.clone(), value.to_vec())
+            })
             .collect();
 
         let serialized = SerializedFrameData {

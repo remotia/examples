@@ -1,7 +1,14 @@
+use std::time::Duration;
+
 use clap::Parser;
+use remotia::buffers::BufMut;
+use remotia::buffers::BytesMut;
 use remotia::pipeline::registry::PipelineRegistry;
 use remotia::profilation::loggers::console::ConsoleAverageStatsLogger;
 use remotia::profilation::time::add::TimestampAdder;
+use remotia::register;
+use remotia::traits::FrameError;
+use remotia::traits::FrameProcessor;
 use remotia::{
     buffers::pool_registry::PoolRegistry,
     pipeline::{component::Component, Pipeline},
@@ -10,12 +17,14 @@ use remotia::{
     render::winit::WinitRenderer,
 };
 use remotia_ffmpeg_codecs::{decoders::DecoderBuilder, ffi, scaling::ScalerBuilder};
-
-use remotia::register;
 use remotia_srt::options::ByteCount;
 use remotia_srt::receiver::SRTFrameReceiver;
 
+use remotia::traits::FrameProperties;
+
 use remotia_srt::SrtSocket;
+use screen_stream::types::BufferType;
+use screen_stream::types::Stat;
 use screen_stream::types::{BufferType::*, FrameData, Stat::*};
 
 #[derive(Parser, Debug)]
@@ -49,6 +58,19 @@ async fn main() {
     let args = Args::parse();
 
     log::info!("Streaming at {}x{}", args.width, args.height);
+    let renderer = WinitRenderer::new(DecodedRGBAFrameBuffer, args.width, args.height);
+
+    // for i in 0..10 {
+    //     let mut frame_data = FrameData::default();
+    //     frame_data.set(Stat::CaptureTime, i);
+    //     let mut buffer = BytesMut::zeroed((args.width * args.height * 4) as usize);
+    //     buffer.fill(i as u8 * 10);
+    //     frame_data
+    //         .buffers
+    //         .insert(BufferType::DecodedRGBAFrameBuffer, buffer);
+    //     renderer.process(frame_data).await;
+    //     tokio::time::sleep(Duration::from_millis(100)).await;
+    // }
 
     let pixels_count = (args.width * args.height) as usize;
     let mut pools = PoolRegistry::new();
@@ -79,8 +101,8 @@ async fn main() {
         Pipelines::Error,
         Pipeline::<FrameData>::singleton(
             Component::new()
-                .append(Function::new(|fd| {
-                    log::warn!("Dropped frame");
+                .append(Function::new(|fd: FrameData| {
+                    log::warn!("Dropped frame: {:?}", fd.get_error());
                     Some(fd)
                 }))
                 .append(pools.get(DecodedRGBAFrameBuffer).redeemer().soft()),
@@ -90,7 +112,7 @@ async fn main() {
 
     log::info!("Connecting...");
     let socket = SrtSocket::builder()
-        .set(|options| options.receiver.buffer_size = ByteCount(1024 * 1024))
+        .set(|options| options.receiver.buffer_size = ByteCount(10 * 1024 * 1024))
         .call(args.server_address.as_str(), None)
         .await
         .unwrap();
@@ -115,11 +137,7 @@ async fn main() {
                     .append(decoder_puller)
                     .append(OnErrorSwitch::new(pipelines.get_mut(&Pipelines::Error)))
                     // .append(TimestampDiffCalculator::new(DecodePushTime, DecodeTime))
-                    .append(WinitRenderer::new(
-                        DecodedRGBAFrameBuffer,
-                        args.width,
-                        args.height,
-                    ))
+                    .append(renderer)
                     // .append(TimestampDiffCalculator::new(CaptureTime, FrameDelay))
                     .append(pools.get(DecodedRGBAFrameBuffer).redeemer()),
             )
@@ -128,8 +146,6 @@ async fn main() {
                     ConsoleAverageStatsLogger::new()
                         .header("Statistics")
                         .log(ReceptionDelay)
-                        .log(FrameDelay)
-                        .log(DecodeTime),
                 ),
             )
     );

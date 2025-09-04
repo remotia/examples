@@ -2,14 +2,14 @@ use std::collections::HashMap;
 
 use bitcode::{Decode, Encode};
 use remotia::{
-    buffers::{BufMut, BytesMut},
+    buffers::BytesMut,
     traits::{
         BorrowFrameProperties, BorrowMutFrameProperties, FrameError, FrameProperties,
         PullableFrameProperties,
     },
 };
-use remotia_ffmpeg_codecs::FFMpegCodec;
 
+mod ffmpeg;
 mod transmission;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Encode, Decode)]
@@ -38,14 +38,16 @@ pub enum Stat {
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Error {
     NoFrame,
-    CodecError,
+    FlushError,
+    DrainError,
+    GenericCodecError,
     NetworkError,
 }
 
 #[derive(Default, Debug)]
 pub struct FrameData {
     statistics: HashMap<Stat, u128>,
-    buffers: HashMap<BufferType, BytesMut>,
+    pub buffers: HashMap<BufferType, BytesMut>,
     error: Option<Error>,
 }
 
@@ -124,45 +126,5 @@ impl FrameError<Error> for FrameData {
 
     fn get_error(&self) -> Option<Error> {
         self.error
-    }
-}
-
-impl FFMpegCodec for FrameData {
-    fn write_packet_data(&mut self, packet_data: &[u8]) {
-        self.buffers
-            .get_mut(&BufferType::EncodedPacketBuffer)
-            .unwrap()
-            .put(packet_data);
-    }
-
-    fn get_packet_data_buffer(&self) -> &[u8] {
-        self.buffers.get(&BufferType::EncodedPacketBuffer).unwrap()
-    }
-
-    fn write_decoded_buffer(&mut self, data: &[u8]) {
-        self.buffers
-            .get_mut(&BufferType::DecodedRGBAFrameBuffer)
-            .unwrap()
-            .put(data);
-    }
-
-    fn report_flush_error(&mut self) {
-        self.report_error(Error::CodecError);
-    }
-
-    fn report_codec_error(&mut self) {
-        self.report_error(Error::CodecError);
-    }
-
-    fn report_decoder_drain_error(&mut self) {
-        self.report_error(Error::CodecError);
-    }
-
-    fn set_frame_id(&mut self, frame_id: i64) {
-        self.set(Stat::CaptureTime, frame_id as u128);
-    }
-
-    fn get_frame_id(&self) -> i64 {
-        self.get(&Stat::CaptureTime).unwrap() as i64
     }
 }

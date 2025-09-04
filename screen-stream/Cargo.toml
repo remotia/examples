@@ -17,7 +17,8 @@ version = "1.28.2"
 features = ["rt", "rt-multi-thread", "macros", "net"]
 
 [dependencies.remotia]
-version = "0.1.3"
+# version = "0.1.3"
+path = "../../remotia/crates/remotia"
 features = ["buffers", "capture", "render", "profilation", "serialization"]
 
 [dependencies.remotia-ffmpeg-codecs]
