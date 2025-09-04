@@ -71,10 +71,7 @@ async fn main() {
         .register(CapturedRGBAFrameBuffer, POOLS_SIZE, pixels_count * 4)
         .await;
     pools
-        .register(EncodedFrameBuffer, POOLS_SIZE, pixels_count * 4)
-        .await;
-    pools
-        .register(SerializedFrameData, POOLS_SIZE, pixels_count * 4)
+        .register(EncodedPacketBuffer, POOLS_SIZE, pixels_count * 4)
         .await;
 
     log::info!("{:?}", args.codec_options);
@@ -112,7 +109,7 @@ async fn main() {
                     Some(fd)
                 }))
                 .append(pools.get(CapturedRGBAFrameBuffer).redeemer().soft())
-                .append(pools.get(EncodedFrameBuffer).redeemer().soft()),
+                .append(pools.get(EncodedPacketBuffer).redeemer().soft()),
         )
         .feedable()
     );
@@ -141,7 +138,7 @@ async fn main() {
             .link(
                 Component::new()
                     .append(pools.get(CapturedRGBAFrameBuffer).redeemer())
-                    .append(pools.get(EncodedFrameBuffer).borrower())
+                    .append(pools.get(EncodedPacketBuffer).borrower())
                     .append(encoder_puller)
                     .append(TimestampDiffCalculator::new(EncodePushTime, EncodeTime))
                     .append(OnErrorSwitch::new(pipelines.get_mut(&Pipelines::Error))),
@@ -149,14 +146,12 @@ async fn main() {
             .link(
                 Component::new()
                     .append(TimestampAdder::new(TransmissionStartTime))
-                    .append(pools.get(SerializedFrameData).borrower())
-                    .append(pools.get(EncodedFrameBuffer).redeemer())
+                    .append(pools.get(EncodedPacketBuffer).redeemer())
                     .append(SRTFrameSender::from_socket(socket))
                     .append(TimestampDiffCalculator::new(
                         TransmissionStartTime,
                         TransmissionTime,
                     ))
-                    .append(pools.get(SerializedFrameData).redeemer()),
             )
             .link(
                 Component::new().append(

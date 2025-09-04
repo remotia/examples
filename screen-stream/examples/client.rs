@@ -13,11 +13,9 @@ use remotia_ffmpeg_codecs::{decoders::DecoderBuilder, ffi, scaling::ScalerBuilde
 
 use remotia::register;
 use remotia_srt::options::ByteCount;
-use remotia_srt::SrtSocket;
-use remotia_srt::{
-    receiver::SRTFrameReceiver,
-};
+use remotia_srt::receiver::SRTFrameReceiver;
 
+use remotia_srt::SrtSocket;
 use screen_stream::types::{BufferType::*, FrameData, Stat::*};
 
 #[derive(Parser, Debug)]
@@ -54,8 +52,9 @@ async fn main() {
 
     let pixels_count = (args.width * args.height) as usize;
     let mut pools = PoolRegistry::new();
+
     pools
-        .register(SerializedFrameData, POOLS_SIZE, pixels_count * 4)
+        .register(EncodedPacketBuffer, POOLS_SIZE, pixels_count * 4)
         .await;
     pools
         .register(DecodedRGBAFrameBuffer, POOLS_SIZE, pixels_count * 4)
@@ -84,7 +83,6 @@ async fn main() {
                     log::warn!("Dropped frame");
                     Some(fd)
                 }))
-                .append(pools.get(SerializedFrameData).redeemer().soft())
                 .append(pools.get(DecodedRGBAFrameBuffer).redeemer().soft()),
         )
         .feedable()
@@ -103,12 +101,12 @@ async fn main() {
         Pipeline::<FrameData>::new()
             .link(
                 Component::new()
-                    .append(pools.get(SerializedFrameData).borrower())
+                    .append(pools.get(EncodedPacketBuffer).borrower())
                     .append(SRTFrameReceiver::from_socket(socket))
-                    .append(TimestampDiffCalculator::new(CaptureTime, ReceptionDelay))
-                    .append(pools.get(SerializedFrameData).redeemer())
+                    // .append(TimestampDiffCalculator::new(CaptureTime, ReceptionDelay))
                     .append(TimestampAdder::new(DecodePushTime))
                     .append(decoder_pusher)
+                    .append(pools.get(EncodedPacketBuffer).redeemer())
                     .append(OnErrorSwitch::new(pipelines.get_mut(&Pipelines::Error))),
             )
             .link(
@@ -116,13 +114,13 @@ async fn main() {
                     .append(pools.get(DecodedRGBAFrameBuffer).borrower())
                     .append(decoder_puller)
                     .append(OnErrorSwitch::new(pipelines.get_mut(&Pipelines::Error)))
-                    .append(TimestampDiffCalculator::new(DecodePushTime, DecodeTime))
+                    // .append(TimestampDiffCalculator::new(DecodePushTime, DecodeTime))
                     .append(WinitRenderer::new(
                         DecodedRGBAFrameBuffer,
                         args.width,
                         args.height,
                     ))
-                    .append(TimestampDiffCalculator::new(CaptureTime, FrameDelay))
+                    // .append(TimestampDiffCalculator::new(CaptureTime, FrameDelay))
                     .append(pools.get(DecodedRGBAFrameBuffer).redeemer()),
             )
             .link(
