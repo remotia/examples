@@ -1,3 +1,5 @@
+use std::sync::mpsc::RecvError;
+
 use async_trait::async_trait;
 use log::debug;
 use remotia::{
@@ -6,10 +8,9 @@ use remotia::{
 };
 use scap::{
     capturer::{Capturer, Options, Resolution},
-    frame::FrameType,
+    frame::{Frame, FrameType},
 };
-
-use core::slice;
+use tokio::sync::watch;
 
 pub struct ScapFrameCapturer<K> {
     buffer_key: K,
@@ -17,16 +18,12 @@ pub struct ScapFrameCapturer<K> {
     started: bool,
 }
 
-// TODO: Evaluate a safer way to move the capturer to another thread
-// Necessary for multi-threaded pipelines
-unsafe impl<K> Send for ScapFrameCapturer<K> {}
-
 impl<K> ScapFrameCapturer<K> {
     pub fn new(buffer_key: K, capturer: Capturer) -> Self {
         Self {
             buffer_key,
             capturer,
-            started: false
+            started: false,
         }
     }
 
@@ -42,10 +39,7 @@ impl<K> ScapFrameCapturer<K> {
         })
         .unwrap();
 
-        Self::new(
-            buffer_key,
-            capturer
-        )
+        Self::new(buffer_key, capturer)
     }
 
     pub fn start(&mut self) {
@@ -63,10 +57,10 @@ impl<K> ScapFrameCapturer<K> {
         buffer_size as usize
     }
 
-    pub fn capture(&mut self) -> Result<scap::frame::Frame, std::sync::mpsc::RecvError> {
+    pub fn next_frame(&mut self) -> Result<Frame, RecvError> {
         self.capturer.get_next_frame()
     }
-    
+
     pub fn capturer(&mut self) -> &mut Capturer {
         &mut self.capturer
     }
@@ -75,6 +69,7 @@ impl<K> ScapFrameCapturer<K> {
 #[async_trait]
 impl<F, K> FrameProcessor<F> for ScapFrameCapturer<K>
 where
+    K: Send,
     F: BorrowMutFrameProperties<K, BytesMut> + Send + 'static,
 {
     async fn process(&mut self, mut frame_data: F) -> Option<F> {
@@ -84,8 +79,16 @@ where
             self.started = true;
         }
 
-        let output_buffer = frame_data.get_mut_ref(&self.buffer_key).unwrap();
-        match self.capture() {
+        let captured_frame = self.next_frame();
+        let output_buffer = match frame_data.get_mut_ref(&self.buffer_key) {
+            Some(buffer) => buffer,
+            None => {
+                log::warn!("Dumping captured frame because no buffer is available");
+                return None;
+            }
+        };
+
+        match captured_frame {
             Ok(frame) => {
                 let buffer = match frame {
                     scap::frame::Frame::BGRx(bgraframe) => bgraframe,

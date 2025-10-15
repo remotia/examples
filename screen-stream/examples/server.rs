@@ -140,8 +140,8 @@ async fn main() {
         Pipeline::<FrameData>::new()
             .link(
                 Component::new()
-                    .append(Ticker::new(1000 / args.framerate as u64))
-                    .append(pools.get(CapturedRGBAFrameBuffer).borrower())
+                    // .append(Ticker::new(1000 / args.framerate as u64))
+                    .append(pools.get(CapturedRGBAFrameBuffer).borrower().soft())
                     .append(TimestampAdder::new(CaptureTime))
                     .append(capturer)
                     .append(TimestampAdder::new(EncodePushTime))

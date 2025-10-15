@@ -59,12 +59,12 @@ async fn main() {
     let args = Args::parse();
 
     log::info!("Streaming at {}x{}", args.width, args.height);
-    // let renderer = WinitRenderer::new(DecodedRGBAFrameBuffer, args.width, args.height);
-    let renderer = PngRenderer::new(
-        DecodedRGBAFrameBuffer,
-        ".local/test/".into(),
-        (args.width, args.height)
-    );
+    let renderer = WinitRenderer::new(DecodedRGBAFrameBuffer, args.width, args.height);
+    // let renderer = PngRenderer::new(
+    //     DecodedRGBAFrameBuffer,
+    //     ".local/test/".into(),
+    //     (args.width, args.height)
+    // );
 
     // for i in 0..10 {
     //     let mut frame_data = FrameData::default();
