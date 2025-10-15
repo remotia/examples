@@ -23,6 +23,7 @@ use remotia_srt::receiver::SRTFrameReceiver;
 use remotia::traits::FrameProperties;
 
 use remotia_srt::SrtSocket;
+use screen_stream::renderers::png::PngRenderer;
 use screen_stream::types::BufferType;
 use screen_stream::types::Stat;
 use screen_stream::types::{BufferType::*, FrameData, Stat::*};
@@ -58,7 +59,12 @@ async fn main() {
     let args = Args::parse();
 
     log::info!("Streaming at {}x{}", args.width, args.height);
-    let renderer = WinitRenderer::new(DecodedRGBAFrameBuffer, args.width, args.height);
+    // let renderer = WinitRenderer::new(DecodedRGBAFrameBuffer, args.width, args.height);
+    let renderer = PngRenderer::new(
+        DecodedRGBAFrameBuffer,
+        ".local/test/".into(),
+        (args.width, args.height)
+    );
 
     // for i in 0..10 {
     //     let mut frame_data = FrameData::default();

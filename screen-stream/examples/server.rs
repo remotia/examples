@@ -1,6 +1,7 @@
 use std::time::Duration;
 
 use clap::Parser;
+use image::buffer;
 use remotia::profilation::loggers::console::ConsoleAverageStatsLogger;
 use remotia::profilation::time::diff::TimestampDiffCalculator;
 use remotia::{
@@ -11,10 +12,10 @@ use remotia::{
     profilation::time::add::TimestampAdder,
 };
 use remotia_ffmpeg_codecs::encoders::fillers::rgba::RGBAFrameFiller;
-use remotia_ffmpeg_codecs::{
-    encoders::EncoderBuilder, ffi, options::Options, scaling::ScalerBuilder,
-};
+use remotia_ffmpeg_codecs::options::Options;
+use remotia_ffmpeg_codecs::{encoders::EncoderBuilder, ffi, scaling::ScalerBuilder};
 use remotia_srt::{options::ByteCount, sender::SRTFrameSender, SrtSocket};
+use screen_stream::capturers::scap::ScapFrameCapturer;
 use screen_stream::types::{BufferType::*, FrameData, Stat::*};
 
 use remotia::register;
@@ -22,7 +23,7 @@ use remotia::register;
 #[derive(Parser, Debug)]
 struct Args {
     #[arg(short, long, default_value_t = 60)]
-    framerate: u64,
+    framerate: u32,
 
     #[arg(long, default_value_t=String::from(":9000"))]
     listen_address: String,
@@ -35,6 +36,12 @@ struct Args {
 
     #[arg(long)]
     stream_height: Option<u32>,
+
+    #[arg(long)]
+    force_capture_width: Option<u32>,
+
+    #[arg(long)]
+    force_capture_height: Option<u32>,
 
     #[arg(id = "codec-option", long)]
     codec_options: Vec<String>,
@@ -54,13 +61,18 @@ async fn main() {
     log::info!("Hello World!");
 
     let args = Args::parse();
+    let mut capturer = ScapFrameCapturer::new_from_primary(args.framerate, CapturedRGBAFrameBuffer);
 
-    let capturer = ScrapFrameCapturer::new_from_primary(CapturedRGBAFrameBuffer);
+    log::info!("{:?}", capturer.capturer().get_output_frame_size());
 
-    log::info!("Streaming at {}x{}", capturer.width(), capturer.height());
+    let capturer_resolution = capturer.resolution();
 
-    let width = capturer.width() as u32;
-    let height = capturer.height() as u32;
+    let (width, height) = (
+        args.force_capture_width.unwrap_or(capturer_resolution.0),
+        args.force_capture_height.unwrap_or(capturer_resolution.1),
+    );
+
+    log::info!("Streaming at {}x{}", width, height);
 
     let stream_width = args.stream_width.unwrap_or(width);
     let stream_height = args.stream_height.unwrap_or(height);
@@ -128,7 +140,7 @@ async fn main() {
         Pipeline::<FrameData>::new()
             .link(
                 Component::new()
-                    .append(Ticker::new(1000 / args.framerate))
+                    .append(Ticker::new(1000 / args.framerate as u64))
                     .append(pools.get(CapturedRGBAFrameBuffer).borrower())
                     .append(TimestampAdder::new(CaptureTime))
                     .append(capturer)
