@@ -60,17 +60,16 @@ async fn main() {
 
     log::info!("Streaming at {}x{}", args.width, args.height);
     let mut renderer = WinitRenderer::new(DecodedRGBAFrameBuffer);
+    let render_runner = renderer.allocate(args.width, args.height);
+    let gui_handle = tokio::spawn(async move {
+        render_runner.start();
+    });
+
     // let renderer = PngRenderer::new(
     //     DecodedRGBAFrameBuffer,
     //     ".local/test/".into(),
     //     (args.width, args.height)
     // );
-
-    let render_runner = renderer.allocate(args.width, args.height);
-
-    tokio::spawn(async move {
-        render_runner.start();
-    });
     
     let mut i = 0;
     loop {
@@ -167,4 +166,5 @@ async fn main() {
     // );
 
     // pipelines.run().await;
+    // gui_handle.await;
 }
