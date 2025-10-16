@@ -59,102 +59,112 @@ async fn main() {
     let args = Args::parse();
 
     log::info!("Streaming at {}x{}", args.width, args.height);
-    let renderer = WinitRenderer::new(DecodedRGBAFrameBuffer, args.width, args.height);
+    let mut renderer = WinitRenderer::new(DecodedRGBAFrameBuffer);
     // let renderer = PngRenderer::new(
     //     DecodedRGBAFrameBuffer,
     //     ".local/test/".into(),
     //     (args.width, args.height)
     // );
 
-    // for i in 0..10 {
-    //     let mut frame_data = FrameData::default();
-    //     frame_data.set(Stat::CaptureTime, i);
-    //     let mut buffer = BytesMut::zeroed((args.width * args.height * 4) as usize);
-    //     buffer.fill(i as u8 * 10);
-    //     frame_data
-    //         .buffers
-    //         .insert(BufferType::DecodedRGBAFrameBuffer, buffer);
-    //     renderer.process(frame_data).await;
-    //     tokio::time::sleep(Duration::from_millis(100)).await;
-    // }
+    let render_runner = renderer.allocate(args.width, args.height);
 
-    let pixels_count = (args.width * args.height) as usize;
-    let mut pools = PoolRegistry::new();
+    tokio::spawn(async move {
+        render_runner.start();
+    });
+    
+    let mut i = 0;
+    loop {
+        i += 1;
 
-    pools
-        .register(EncodedPacketBuffer, POOLS_SIZE, pixels_count * 4)
-        .await;
-    pools
-        .register(DecodedRGBAFrameBuffer, POOLS_SIZE, pixels_count * 4)
-        .await;
+        let mut frame_data = FrameData::default();
+        frame_data.set(Stat::CaptureTime, i);
+        let mut buffer = BytesMut::zeroed((args.width * args.height * 4) as usize);
+        buffer.fill((i * 10 % 256) as u8);
+        frame_data
+            .buffers
+            .insert(BufferType::DecodedRGBAFrameBuffer, buffer);
+        renderer.process(frame_data).await;
 
-    let (decoder_pusher, decoder_puller) = DecoderBuilder::new()
-        .codec_id(&args.codec_id)
-        .scaler(
-            ScalerBuilder::new()
-                .input_width(args.width as i32)
-                .input_height(args.height as i32)
-                .input_pixel_format(ffi::AVPixelFormat_AV_PIX_FMT_YUV420P)
-                .output_pixel_format(ffi::AVPixelFormat_AV_PIX_FMT_BGRA)
-                .build(),
-        )
-        .build();
+        tokio::time::sleep(Duration::from_millis(33)).await;
+    }
 
-    let mut pipelines = PipelineRegistry::<FrameData, Pipelines>::new();
+    // let pixels_count = (args.width * args.height) as usize;
+    // let mut pools = PoolRegistry::new();
 
-    register!(
-        pipelines,
-        Pipelines::Error,
-        Pipeline::<FrameData>::singleton(
-            Component::new()
-                .append(Function::new(|fd: FrameData| {
-                    log::warn!("Dropped frame: {:?}", fd.get_error());
-                    Some(fd)
-                }))
-                .append(pools.get(DecodedRGBAFrameBuffer).redeemer().soft()),
-        )
-        .feedable()
-    );
+    // pools
+    //     .register(EncodedPacketBuffer, POOLS_SIZE, pixels_count * 4)
+    //     .await;
+    // pools
+    //     .register(DecodedRGBAFrameBuffer, POOLS_SIZE, pixels_count * 4)
+    //     .await;
 
-    log::info!("Connecting...");
-    let socket = SrtSocket::builder()
-        .set(|options| options.receiver.buffer_size = ByteCount(10 * 1024 * 1024))
-        .call(args.server_address.as_str(), None)
-        .await
-        .unwrap();
+    // let (decoder_pusher, decoder_puller) = DecoderBuilder::new()
+    //     .codec_id(&args.codec_id)
+    //     .scaler(
+    //         ScalerBuilder::new()
+    //             .input_width(args.width as i32)
+    //             .input_height(args.height as i32)
+    //             .input_pixel_format(ffi::AVPixelFormat_AV_PIX_FMT_YUV420P)
+    //             .output_pixel_format(ffi::AVPixelFormat_AV_PIX_FMT_BGRA)
+    //             .build(),
+    //     )
+    //     .build();
 
-    register!(
-        pipelines,
-        Pipelines::Main,
-        Pipeline::<FrameData>::new()
-            .link(
-                Component::new()
-                    .append(pools.get(EncodedPacketBuffer).borrower())
-                    .append(SRTFrameReceiver::from_socket(socket))
-                    // .append(TimestampDiffCalculator::new(CaptureTime, ReceptionDelay))
-                    .append(TimestampAdder::new(DecodePushTime))
-                    .append(decoder_pusher)
-                    .append(pools.get(EncodedPacketBuffer).redeemer())
-                    .append(OnErrorSwitch::new(pipelines.get_mut(&Pipelines::Error))),
-            )
-            .link(
-                Component::new()
-                    .append(pools.get(DecodedRGBAFrameBuffer).borrower())
-                    .append(decoder_puller)
-                    .append(OnErrorSwitch::new(pipelines.get_mut(&Pipelines::Error)))
-                    // .append(TimestampDiffCalculator::new(DecodePushTime, DecodeTime))
-                    .append(renderer)
-                    // .append(TimestampDiffCalculator::new(CaptureTime, FrameDelay))
-                    .append(pools.get(DecodedRGBAFrameBuffer).redeemer()),
-            )
-            .link(
-                Component::new().append(
-                    ConsoleAverageStatsLogger::new()
-                        .header("Statistics")
-                        .log(ReceptionDelay)
-                ),
-            )
-    );
+    // let mut pipelines = PipelineRegistry::<FrameData, Pipelines>::new();
 
-    pipelines.run().await;
+    // register!(
+    //     pipelines,
+    //     Pipelines::Error,
+    //     Pipeline::<FrameData>::singleton(
+    //         Component::new()
+    //             .append(Function::new(|fd: FrameData| {
+    //                 log::warn!("Dropped frame: {:?}", fd.get_error());
+    //                 Some(fd)
+    //             }))
+    //             .append(pools.get(DecodedRGBAFrameBuffer).redeemer().soft()),
+    //     )
+    //     .feedable()
+    // );
+
+    // log::info!("Connecting...");
+    // let socket = SrtSocket::builder()
+    //     .set(|options| options.receiver.buffer_size = ByteCount(10 * 1024 * 1024))
+    //     .call(args.server_address.as_str(), None)
+    //     .await
+    //     .unwrap();
+
+    // register!(
+    //     pipelines,
+    //     Pipelines::Main,
+    //     Pipeline::<FrameData>::new()
+    //         .link(
+    //             Component::new()
+    //                 .append(pools.get(EncodedPacketBuffer).borrower())
+    //                 .append(SRTFrameReceiver::from_socket(socket))
+    //                 // .append(TimestampDiffCalculator::new(CaptureTime, ReceptionDelay))
+    //                 .append(TimestampAdder::new(DecodePushTime))
+    //                 .append(decoder_pusher)
+    //                 .append(pools.get(EncodedPacketBuffer).redeemer())
+    //                 .append(OnErrorSwitch::new(pipelines.get_mut(&Pipelines::Error))),
+    //         )
+    //         .link(
+    //             Component::new()
+    //                 .append(pools.get(DecodedRGBAFrameBuffer).borrower())
+    //                 .append(decoder_puller)
+    //                 .append(OnErrorSwitch::new(pipelines.get_mut(&Pipelines::Error)))
+    //                 // .append(TimestampDiffCalculator::new(DecodePushTime, DecodeTime))
+    //                 .append(renderer)
+    //                 // .append(TimestampDiffCalculator::new(CaptureTime, FrameDelay))
+    //                 .append(pools.get(DecodedRGBAFrameBuffer).redeemer()),
+    //         )
+    //         .link(
+    //             Component::new().append(
+    //                 ConsoleAverageStatsLogger::new()
+    //                     .header("Statistics")
+    //                     .log(ReceptionDelay)
+    //             ),
+    //         )
+    // );
+
+    // pipelines.run().await;
 }
