@@ -1,14 +1,12 @@
 use std::time::Duration;
 
 use clap::Parser;
-use image::buffer;
 use remotia::profilation::loggers::console::ConsoleAverageStatsLogger;
 use remotia::profilation::time::diff::TimestampDiffCalculator;
 use remotia::{
     buffers::pool_registry::PoolRegistry,
-    capture::scrap::ScrapFrameCapturer,
     pipeline::{component::Component, registry::PipelineRegistry, Pipeline},
-    processors::{error_switch::OnErrorSwitch, functional::Function, ticker::Ticker},
+    processors::{error_switch::OnErrorSwitch, functional::Function},
     profilation::time::add::TimestampAdder,
 };
 use remotia_ffmpeg_codecs::encoders::fillers::rgba::RGBAFrameFiller;

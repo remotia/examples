@@ -1,34 +1,20 @@
-use std::fs::File;
-use std::io::BufReader;
-use std::time::Duration;
-
 use clap::Parser;
-use image::ImageReader;
-use remotia::buffers::BufMut;
-use remotia::buffers::BytesMut;
 use remotia::pipeline::registry::PipelineRegistry;
 use remotia::profilation::loggers::console::ConsoleAverageStatsLogger;
 use remotia::profilation::time::add::TimestampAdder;
 use remotia::register;
 use remotia::traits::FrameError;
-use remotia::traits::FrameProcessor;
 use remotia::{
     buffers::pool_registry::PoolRegistry,
     pipeline::{component::Component, Pipeline},
     processors::{error_switch::OnErrorSwitch, functional::Function},
-    profilation::time::diff::TimestampDiffCalculator,
     render::winit::WinitRenderer,
 };
 use remotia_ffmpeg_codecs::{decoders::DecoderBuilder, ffi, scaling::ScalerBuilder};
 use remotia_srt::options::ByteCount;
 use remotia_srt::receiver::SRTFrameReceiver;
 
-use remotia::traits::FrameProperties;
-
 use remotia_srt::SrtSocket;
-use screen_stream::renderers::png::PngRenderer;
-use screen_stream::types::BufferType;
-use screen_stream::types::Stat;
 use screen_stream::types::{BufferType::*, FrameData, Stat::*};
 
 #[derive(Parser, Debug)]
@@ -53,29 +39,6 @@ enum Pipelines {
     Main,
     Error,
 }
-
-// fn load_png_to_bytesmut(file_path: &str) -> BytesMut {
-//     // Open the file
-//     let file = File::open(file_path).unwrap();
-//     let reader = BufReader::new(file);
-
-//     // Decode the image
-//     let img = ImageReader::new(reader)
-//         .with_guessed_format().unwrap()
-//         .decode().unwrap();
-
-//     // Convert the image to RGBA format
-//     let rgba_img = img.to_rgba8();
-
-//     // Get the raw pixel data
-//     let pixels = rgba_img.into_raw();
-
-//     // Create a BytesMut buffer and extend it with the pixel data
-//     let mut bytes_mut = BytesMut::new();
-//     bytes_mut.extend_from_slice(&pixels);
-
-//     bytes_mut
-// }
 
 #[tokio::main]
 async fn main() {
