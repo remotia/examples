@@ -1,11 +1,6 @@
 use std::collections::HashMap;
 
-use bincode::{
-    de::Decoder,
-    enc::Encoder,
-    error::{DecodeError, EncodeError},
-    Decode, Encode,
-};
+use bitcode::{Decode, Encode};
 use remotia::{
     buffers::BytesMut,
     traits::{
@@ -14,16 +9,18 @@ use remotia::{
     },
 };
 
+mod ffmpeg;
+mod transmission;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Encode, Decode)]
 pub enum BufferType {
     CapturedRGBAFrameBuffer,
-    EncodedFrameBuffer,
-    SerializedFrameData,
+    EncodedPacketBuffer,
 
     DecodedRGBAFrameBuffer,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Encode, Decode)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Stat {
     CaptureTime,
     EncodePushTime,
@@ -38,19 +35,23 @@ pub enum Stat {
     ReceptionDelay,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Encode, Decode)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Error {
     NoFrame,
-    CodecError,
+    FlushError,
+    DrainError,
+    GenericCodecError,
+    NetworkError,
 }
 
 #[derive(Default, Debug)]
 pub struct FrameData {
     statistics: HashMap<Stat, u128>,
-    buffers: HashMap<BufferType, BytesMut>,
+    pub buffers: HashMap<BufferType, BytesMut>,
     error: Option<Error>,
 }
 
+/*
 impl Encode for FrameData {
     fn encode<E: Encoder>(&self, encoder: &mut E) -> Result<(), EncodeError> {
         Encode::encode(&self.statistics, encoder)?;
@@ -84,6 +85,7 @@ impl Decode for FrameData {
         })
     }
 }
+*/
 
 impl FrameProperties<Stat, u128> for FrameData {
     fn set(&mut self, key: Stat, value: u128) {

@@ -3,21 +3,17 @@ use std::time::Duration;
 use clap::Parser;
 use remotia::profilation::loggers::console::ConsoleAverageStatsLogger;
 use remotia::profilation::time::diff::TimestampDiffCalculator;
-use remotia::serialization::bincode::BincodeSerializer;
 use remotia::{
     buffers::pool_registry::PoolRegistry,
-    capture::scrap::ScrapFrameCapturer,
     pipeline::{component::Component, registry::PipelineRegistry, Pipeline},
-    processors::{error_switch::OnErrorSwitch, functional::Function, ticker::Ticker},
+    processors::{error_switch::OnErrorSwitch, functional::Function},
     profilation::time::add::TimestampAdder,
 };
-use remotia_ffmpeg_codecs::{
-    encoders::EncoderBuilder, ffi, options::Options, scaling::ScalerBuilder,
-};
-use remotia_srt::{
-    sender::SRTFrameSender,
-    srt_tokio::{options::ByteCount, SrtSocket},
-};
+use remotia_ffmpeg_codecs::encoders::fillers::rgba::RGBAFrameFiller;
+use remotia_ffmpeg_codecs::options::Options;
+use remotia_ffmpeg_codecs::{encoders::EncoderBuilder, ffi, scaling::ScalerBuilder};
+use remotia_srt::{options::ByteCount, sender::SRTFrameSender, SrtSocket};
+use screen_stream::capturers::scap::ScapFrameCapturer;
 use screen_stream::types::{BufferType::*, FrameData, Stat::*};
 
 use remotia::register;
@@ -25,7 +21,7 @@ use remotia::register;
 #[derive(Parser, Debug)]
 struct Args {
     #[arg(short, long, default_value_t = 60)]
-    framerate: u64,
+    framerate: u32,
 
     #[arg(long, default_value_t=String::from(":9000"))]
     listen_address: String,
@@ -38,6 +34,12 @@ struct Args {
 
     #[arg(long)]
     stream_height: Option<u32>,
+
+    #[arg(long)]
+    force_capture_width: Option<u32>,
+
+    #[arg(long)]
+    force_capture_height: Option<u32>,
 
     #[arg(id = "codec-option", long)]
     codec_options: Vec<String>,
@@ -57,13 +59,18 @@ async fn main() {
     log::info!("Hello World!");
 
     let args = Args::parse();
+    let mut capturer = ScapFrameCapturer::new_from_primary(args.framerate, CapturedRGBAFrameBuffer);
 
-    let capturer = ScrapFrameCapturer::new_from_primary(CapturedRGBAFrameBuffer);
+    log::info!("{:?}", capturer.capturer().get_output_frame_size());
 
-    log::info!("Streaming at {}x{}", capturer.width(), capturer.height());
+    let capturer_resolution = capturer.resolution();
 
-    let width = capturer.width() as u32;
-    let height = capturer.height() as u32;
+    let (width, height) = (
+        args.force_capture_width.unwrap_or(capturer_resolution.0),
+        args.force_capture_height.unwrap_or(capturer_resolution.1),
+    );
+
+    log::info!("Streaming at {}x{}", width, height);
 
     let stream_width = args.stream_width.unwrap_or(width);
     let stream_height = args.stream_height.unwrap_or(height);
@@ -74,10 +81,7 @@ async fn main() {
         .register(CapturedRGBAFrameBuffer, POOLS_SIZE, pixels_count * 4)
         .await;
     pools
-        .register(EncodedFrameBuffer, POOLS_SIZE, pixels_count * 4)
-        .await;
-    pools
-        .register(SerializedFrameData, POOLS_SIZE, pixels_count * 4)
+        .register(EncodedPacketBuffer, POOLS_SIZE, pixels_count * 4)
         .await;
 
     log::info!("{:?}", args.codec_options);
@@ -89,8 +93,7 @@ async fn main() {
     }
     let (encoder_pusher, encoder_puller) = EncoderBuilder::new()
         .codec_id(&args.codec_id)
-        .rgba_buffer_key(CapturedRGBAFrameBuffer)
-        .encoded_buffer_key(EncodedFrameBuffer)
+        .filler(RGBAFrameFiller::new(CapturedRGBAFrameBuffer))
         .scaler(
             ScalerBuilder::new()
                 .input_width(width as i32)
@@ -116,7 +119,7 @@ async fn main() {
                     Some(fd)
                 }))
                 .append(pools.get(CapturedRGBAFrameBuffer).redeemer().soft())
-                .append(pools.get(EncodedFrameBuffer).redeemer().soft()),
+                .append(pools.get(EncodedPacketBuffer).redeemer().soft()),
         )
         .feedable()
     );
@@ -135,8 +138,8 @@ async fn main() {
         Pipeline::<FrameData>::new()
             .link(
                 Component::new()
-                    .append(Ticker::new(1000 / args.framerate))
-                    .append(pools.get(CapturedRGBAFrameBuffer).borrower())
+                    // .append(Ticker::new(1000 / args.framerate as u64))
+                    .append(pools.get(CapturedRGBAFrameBuffer).borrower().soft())
                     .append(TimestampAdder::new(CaptureTime))
                     .append(capturer)
                     .append(TimestampAdder::new(EncodePushTime))
@@ -145,7 +148,7 @@ async fn main() {
             .link(
                 Component::new()
                     .append(pools.get(CapturedRGBAFrameBuffer).redeemer())
-                    .append(pools.get(EncodedFrameBuffer).borrower())
+                    .append(pools.get(EncodedPacketBuffer).borrower())
                     .append(encoder_puller)
                     .append(TimestampDiffCalculator::new(EncodePushTime, EncodeTime))
                     .append(OnErrorSwitch::new(pipelines.get_mut(&Pipelines::Error))),
@@ -153,15 +156,12 @@ async fn main() {
             .link(
                 Component::new()
                     .append(TimestampAdder::new(TransmissionStartTime))
-                    .append(pools.get(SerializedFrameData).borrower())
-                    .append(BincodeSerializer::new(SerializedFrameData))
-                    .append(pools.get(EncodedFrameBuffer).redeemer())
-                    .append(SRTFrameSender::new(SerializedFrameData, socket))
+                    .append(SRTFrameSender::from_socket(socket))
+                    .append(pools.get(EncodedPacketBuffer).redeemer())
                     .append(TimestampDiffCalculator::new(
                         TransmissionStartTime,
                         TransmissionTime,
                     ))
-                    .append(pools.get(SerializedFrameData).redeemer()),
             )
             .link(
                 Component::new().append(
