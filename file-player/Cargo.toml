@@ -1,0 +1,26 @@
+[package]
+name = "file-player"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies.tokio]
+version = "1.28.2"
+features = ["rt", "rt-multi-thread", "macros", "net"]
+
+[dependencies.remotia]
+version = "0.1.4"
+features = ["buffers", "capture", "render", "profilation", "serialization"]
+
+[dependencies.remotia-srt]
+git = "https://github.com/remotia/remotia-srt"
+branch = "feat/depupdate"
+
+[dependencies]
+log = "0.4.19"
+env_logger = "0.10.0"
+bitcode = "0.6.7"
+clap = { version = "4.5.54", features = ["derive"]}
+async-trait = "0.1.89"
+image = "0.25.8"
+scap = "0.0.8"
+y4m = "0.8.0"
