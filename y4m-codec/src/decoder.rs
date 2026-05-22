@@ -26,10 +26,10 @@ struct Args {
     #[arg(short, long)]
     output_dir: String,
 
-    #[arg(short, long)]
+    #[arg(short = 'W', long)]
     width: usize,
 
-    #[arg(short, long)]
+    #[arg(short = 'H', long)]
     height: usize,
 }
 
@@ -165,7 +165,31 @@ impl FrameProcessor<FrameData> for DecoderProcessor {
         let mut decode_context = self.decode_context.lock().await;
 
         if is_eof {
-            log::info!("DecoderProcessor: EOF, flushing decoder");
+            log::info!("DecoderProcessor: EOF, flushing parser and decoder");
+
+            let mut packet = rsmpeg::avcodec::AVPacket::new();
+            loop {
+                let (packet_ready, consumed) = match self
+                    .parser_context
+                    .parse_packet(&mut decode_context, &mut packet, &[])
+                {
+                    Ok(result) => result,
+                    Err(e) => {
+                        log::warn!("Parser flush error: {:?}", e);
+                        break;
+                    }
+                };
+
+                if consumed == 0 && !packet_ready {
+                    break;
+                }
+
+                if packet_ready {
+                    let _ = decode_context.send_packet(Some(&packet));
+                    packet = rsmpeg::avcodec::AVPacket::new();
+                }
+            }
+
             let _ = decode_context.send_packet(None);
             drain_and_write_frames(
                 &mut decode_context,
@@ -218,10 +242,19 @@ impl FrameProcessor<FrameData> for DecoderProcessor {
                         Err(RsmpegError::DecoderFlushedError) => {
                             sent = true;
                         }
-                    Err(e) => {
-                        log::trace!("DecoderProcessor: send_packet error: {:?}", e);
-                        sent = true;
-                    }
+                        Err(RsmpegError::SendPacketError(-11)) => {
+                            drain_and_write_frames(
+                                &mut decode_context,
+                                &mut self.scaler,
+                                &mut self.png_writer,
+                                self.output_width,
+                                self.output_height,
+                            );
+                        }
+                        Err(e) => {
+                            log::warn!("DecoderProcessor: send_packet error: {:?}", e);
+                            sent = true;
+                        }
                     }
                 }
 
@@ -276,6 +309,7 @@ fn drain_and_write_frames(
             }
             Err(RsmpegError::DecoderDrainError) => break,
             Err(RsmpegError::DecoderFlushedError) => break,
+            Err(RsmpegError::ReceiveFrameError(-11)) => break,
             Err(e) => {
                 log::warn!("DecoderProcessor: drain receive_frame error: {:?}", e);
                 break;
