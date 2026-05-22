@@ -2,13 +2,15 @@ pub mod processors;
 
 use std::collections::HashMap;
 
-use remotia::buffers::{BuffersMap, BytesMut, buffers_map};
+use remotia::buffers::{BufMut, BuffersMap, BytesMut, buffers_map};
 use remotia::traits::{BorrowFrameProperties, BorrowMutFrameProperties, FrameError, FrameProperties};
+use remotia_ffmpeg_codecs::FFMpegCodec;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum BufferType {
     RgbaFrame,
     EncodedPacket,
+    DecodedRGBAFrame,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -61,5 +63,61 @@ impl FrameError<Error> for FrameData {
 
     fn get_error(&self) -> Option<Error> {
         self.error
+    }
+}
+
+impl FFMpegCodec for FrameData {
+    fn write_packet_data(&mut self, packet_data: &[u8]) {
+        if let Some(buf) = self.buffers.get_mut(&BufferType::EncodedPacket) {
+            buf.put(packet_data);
+        } else {
+            let mut buf = BytesMut::with_capacity(packet_data.len());
+            buf.put(packet_data);
+            self.buffers.insert(BufferType::EncodedPacket, buf);
+        }
+    }
+
+    fn get_packet_data_buffer(&self) -> &[u8] {
+        self.buffers
+            .get(&BufferType::EncodedPacket)
+            .map(|b| b.as_ref())
+            .unwrap_or(&[])
+    }
+
+    fn write_decoded_buffer(&mut self, data: &[u8]) {
+        if let Some(buf) = self.buffers.get_mut(&BufferType::DecodedRGBAFrame) {
+            buf.put(data);
+        } else {
+            let mut buf = BytesMut::with_capacity(data.len());
+            buf.put(data);
+            self.buffers.insert(BufferType::DecodedRGBAFrame, buf);
+        }
+    }
+
+    fn report_flush_error(&mut self) {
+        self.error = Some(Error::FlushError);
+    }
+
+    fn report_codec_error(&mut self) {
+        self.error = Some(Error::CodecError);
+    }
+
+    fn report_decoder_drain_error(&mut self) {
+        self.error = Some(Error::DrainError);
+    }
+
+    fn set_frame_id(&mut self, frame_id: i64) {
+        self.stats.insert(Stat::FrameId, frame_id as u128);
+    }
+
+    fn get_frame_id(&self) -> i64 {
+        self.stats
+            .get(&Stat::FrameId)
+            .copied()
+            .unwrap_or(0) as i64
+    }
+
+    fn is_eof(&self) -> bool {
+        self.stats.get(&Stat::Eof).copied() == Some(1)
     }
 }

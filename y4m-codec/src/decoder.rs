@@ -1,22 +1,20 @@
 use std::io::Read;
 use std::sync::Arc;
 
+use async_trait::async_trait;
 use clap::Parser;
 use cstr::cstr;
 use remotia::buffers::BytesMut;
 use remotia::pipeline::{component::Component, Pipeline};
-use remotia::traits::{FrameProperties, PullableFrameProperties};
+use remotia::traits::{BorrowFrameProperties, FrameProperties, FrameProcessor, PullableFrameProperties};
+use remotia_ffmpeg_codecs::ffi;
 use rsmpeg::avcodec::{AVCodec, AVCodecContext, AVCodecParserContext};
-use rsmpeg::avutil::AVFrame;
-use rsmpeg::ffi;
+use rsmpeg::error::RsmpegError;
 use rsmpeg::swscale::SwsContext;
 use tokio::sync::Mutex;
 
-use y4m_codec::processors::{
-    decoder_processor::DecoderProcessor,
-    png_frame_writer::PNGWriter,
-};
-use y4m_codec::{BufferType, FrameData, Stat};
+use y4m_codec::processors::png_frame_writer::PNGWriter;
+use y4m_codec::{BufferType, Error, FrameData, Stat};
 
 const READ_CHUNK_SIZE: usize = 65536;
 
@@ -69,15 +67,6 @@ async fn main() {
     )
     .expect("Failed to create SwsContext");
 
-    let scaled_avframe = {
-        let mut f = AVFrame::new();
-        f.set_width(args.width as i32);
-        f.set_height(args.height as i32);
-        f.set_format(ffi::AV_PIX_FMT_RGBA);
-        f.alloc_buffer().expect("Failed to alloc scaled AVFrame buffer");
-        f
-    };
-
     let png_writer = Arc::new(std::sync::Mutex::new(PNGWriter::new(
         args.output_dir.into(),
         args.width as u32,
@@ -88,8 +77,9 @@ async fn main() {
         decode_context,
         parser_context,
         scaler,
-        scaled_avframe,
         png_writer.clone(),
+        args.width as i32,
+        args.height as i32,
     );
 
     let mut pipeline = Pipeline::<FrameData>::new()
@@ -137,4 +127,159 @@ async fn main() {
 
     let frame_count = png_writer.lock().unwrap().frame_count();
     log::info!("Decoding complete: {} frames written", frame_count);
+}
+
+struct DecoderProcessor {
+    decode_context: Arc<Mutex<AVCodecContext>>,
+    parser_context: AVCodecParserContext,
+    scaler: SwsContext,
+    png_writer: Arc<std::sync::Mutex<PNGWriter>>,
+    output_width: i32,
+    output_height: i32,
+}
+
+impl DecoderProcessor {
+    fn new(
+        decode_context: Arc<Mutex<AVCodecContext>>,
+        parser_context: AVCodecParserContext,
+        scaler: SwsContext,
+        png_writer: Arc<std::sync::Mutex<PNGWriter>>,
+        output_width: i32,
+        output_height: i32,
+    ) -> Self {
+        Self {
+            decode_context,
+            parser_context,
+            scaler,
+            png_writer,
+            output_width,
+            output_height,
+        }
+    }
+}
+
+#[async_trait]
+impl FrameProcessor<FrameData> for DecoderProcessor {
+    async fn process(&mut self, mut frame_data: FrameData) -> Option<FrameData> {
+        let is_eof = frame_data.get(&Stat::Eof) == Some(1);
+        let mut decode_context = self.decode_context.lock().await;
+
+        if is_eof {
+            log::info!("DecoderProcessor: EOF, flushing decoder");
+            let _ = decode_context.send_packet(None);
+            drain_and_write_frames(
+                &mut decode_context,
+                &mut self.scaler,
+                &mut self.png_writer,
+                self.output_width,
+                self.output_height,
+            );
+            return Some(frame_data);
+        }
+
+        let packet_data = frame_data
+            .get_ref(&BufferType::EncodedPacket)
+            .map(|b| b.as_ref())
+            .unwrap_or(&[]);
+
+        let mut packet = rsmpeg::avcodec::AVPacket::new();
+        let mut offset = 0usize;
+
+        while offset < packet_data.len() {
+            let (packet_ready, consumed) = match self
+                .parser_context
+                .parse_packet(&mut decode_context, &mut packet, &packet_data[offset..])
+            {
+                Ok(result) => result,
+                Err(e) => {
+                    log::warn!("Parser error: {:?}", e);
+                    break;
+                }
+            };
+
+            offset += consumed;
+
+            if packet_ready {
+                let mut sent = false;
+                while !sent {
+                    match decode_context.send_packet(Some(&packet)) {
+                        Ok(()) => {
+                            sent = true;
+                        }
+                        Err(RsmpegError::DecoderFullError) => {
+                            drain_and_write_frames(
+                                &mut decode_context,
+                                &mut self.scaler,
+                                &mut self.png_writer,
+                                self.output_width,
+                                self.output_height,
+                            );
+                        }
+                        Err(RsmpegError::DecoderFlushedError) => {
+                            sent = true;
+                        }
+                    Err(e) => {
+                        log::trace!("DecoderProcessor: send_packet error: {:?}", e);
+                        sent = true;
+                    }
+                    }
+                }
+
+                packet = rsmpeg::avcodec::AVPacket::new();
+            }
+        }
+
+        drain_and_write_frames(
+            &mut decode_context,
+            &mut self.scaler,
+            &mut self.png_writer,
+            self.output_width,
+            self.output_height,
+        );
+
+        Some(frame_data)
+    }
+}
+
+fn drain_and_write_frames(
+    decode_context: &mut AVCodecContext,
+    scaler: &mut SwsContext,
+    png_writer: &mut Arc<std::sync::Mutex<PNGWriter>>,
+    output_width: i32,
+    output_height: i32,
+) {
+    use rsmpeg::avutil::AVFrame;
+
+    let mut scaled_frame = {
+        let mut f = AVFrame::new();
+        f.set_width(output_width);
+        f.set_height(output_height);
+        f.set_format(ffi::AV_PIX_FMT_RGBA);
+        f.alloc_buffer().expect("Failed to alloc scaled frame buffer");
+        f
+    };
+
+    loop {
+        match decode_context.receive_frame() {
+            Ok(codec_frame) => {
+                scaler
+                    .scale_frame(&codec_frame, 0, codec_frame.height, &mut scaled_frame)
+                    .expect("Scale failed");
+
+                let linesize = scaled_frame.linesize[0] as usize;
+                let height = scaled_frame.height as usize;
+                let rgba_data =
+                    unsafe { std::slice::from_raw_parts(scaled_frame.data[0], height * linesize) };
+
+                let mut writer = png_writer.lock().unwrap();
+                writer.write_frame(rgba_data);
+            }
+            Err(RsmpegError::DecoderDrainError) => break,
+            Err(RsmpegError::DecoderFlushedError) => break,
+            Err(e) => {
+                log::warn!("DecoderProcessor: drain receive_frame error: {:?}", e);
+                break;
+            }
+        }
+    }
 }

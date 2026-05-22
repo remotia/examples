@@ -19,8 +19,11 @@ features = ["rt", "rt-multi-thread", "macros", "sync"]
 path = "../../remotia/crates/remotia"
 features = ["buffers"]
 
+[dependencies.remotia-ffmpeg-codecs]
+path = "../../remotia-ffmpeg-codecs"
+
 [dependencies.rsmpeg]
-path = "local-crates/rsmpeg"
+path = "../../remotia-ffmpeg-codecs/rsmpeg"
 default-features = false
 features = ["ffmpeg8", "link_system_ffmpeg"]
 

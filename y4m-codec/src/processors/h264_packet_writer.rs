@@ -3,9 +3,10 @@ use std::io::Write;
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
-use remotia::traits::{BorrowFrameProperties, FrameProcessor};
+use remotia::traits::FrameProcessor;
+use remotia_ffmpeg_codecs::FFMpegCodec;
 
-use crate::{BufferType, FrameData};
+use crate::FrameData;
 
 pub struct H264PacketWriter {
     file: Arc<Mutex<File>>,
@@ -20,11 +21,10 @@ impl H264PacketWriter {
 #[async_trait]
 impl FrameProcessor<FrameData> for H264PacketWriter {
     async fn process(&mut self, frame_data: FrameData) -> Option<FrameData> {
-        if let Some(packet_buf) = frame_data.get_ref(&BufferType::EncodedPacket) {
-            if !packet_buf.is_empty() {
-                let mut file = self.file.lock().unwrap();
-                file.write_all(packet_buf).expect("Unable to write H264 packet data");
-            }
+        let packet_data = frame_data.get_packet_data_buffer();
+        if !packet_data.is_empty() {
+            let mut file = self.file.lock().unwrap();
+            file.write_all(packet_data).expect("Unable to write H264 packet data");
         }
 
         Some(frame_data)

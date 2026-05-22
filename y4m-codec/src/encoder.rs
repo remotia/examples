@@ -1,21 +1,16 @@
-use std::ffi::CString;
 use std::sync::Arc;
 
 use clap::Parser;
-use cstr::cstr;
 use remotia::buffers::BytesMut;
 use remotia::pipeline::{component::Component, Pipeline};
 use remotia::traits::{FrameProperties, PullableFrameProperties};
-use rsmpeg::avcodec::{AVCodec, AVCodecContext};
-use rsmpeg::avutil::{AVDictionary, AVFrame, AVRational};
-use rsmpeg::ffi;
-use rsmpeg::swscale::SwsContext;
-use tokio::sync::Mutex;
+use remotia_ffmpeg_codecs::encoders::EncoderBuilder;
+use remotia_ffmpeg_codecs::encoders::fillers::rgba::RGBAFrameFiller;
+use remotia_ffmpeg_codecs::scaling::ScalerBuilder;
+use remotia_ffmpeg_codecs::options::Options;
+use remotia_ffmpeg_codecs::ffi;
 
-use y4m_codec::processors::{
-    encoder_puller::EncoderPuller, encoder_pusher::EncoderPusher,
-    h264_packet_writer::H264PacketWriter,
-};
+use y4m_codec::processors::h264_packet_writer::H264PacketWriter;
 use y4m_codec::{BufferType, FrameData, Stat};
 
 #[derive(Parser, Debug)]
@@ -43,55 +38,26 @@ async fn main() {
     let height = y4m_reader.get_height();
     log::info!("Video dimensions: {}x{}", width, height);
 
-    let encoder = AVCodec::find_encoder_by_name(cstr!("libx264")).expect("libx264 encoder not found");
-    let mut encode_context = AVCodecContext::new(&encoder);
-    encode_context.set_width(width as i32);
-    encode_context.set_height(height as i32);
-    encode_context.set_pix_fmt(ffi::AV_PIX_FMT_YUV420P);
-    encode_context.set_time_base(AVRational { num: 1, den: 60 * 1000 });
-    encode_context.set_framerate(AVRational { num: 60, den: 1 });
+    let scaler = ScalerBuilder::new()
+        .input_width(width as i32)
+        .input_height(height as i32)
+        .input_pixel_format(ffi::AV_PIX_FMT_RGBA)
+        .output_width(width as i32)
+        .output_height(height as i32)
+        .output_pixel_format(ffi::AV_PIX_FMT_YUV420P)
+        .build();
 
-    let crf_cstr = CString::new(format!("{}", args.crf)).unwrap();
-    let dict = AVDictionary::new(cstr!("crf"), crf_cstr.as_c_str(), 0)
-        .set(cstr!("preset"), cstr!("medium"), 0)
-        .set(cstr!("tune"), cstr!("film"), 0);
+    let options = Options::new()
+        .set("crf", &args.crf.to_string())
+        .set("preset", "medium")
+        .set("tune", "film");
 
-    let _remaining = encode_context.open(Some(dict)).expect("Unable to open encoder");
-    let encode_context = Arc::new(Mutex::new(encode_context));
-
-    let scaler = SwsContext::get_context(
-        width as i32,
-        height as i32,
-        ffi::AV_PIX_FMT_RGBA,
-        width as i32,
-        height as i32,
-        ffi::AV_PIX_FMT_YUV420P,
-        ffi::SWS_BILINEAR,
-        None,
-        None,
-        None,
-    )
-    .expect("Failed to create SwsContext");
-
-    let input_avframe = {
-        let mut f = AVFrame::new();
-        f.set_width(width as i32);
-        f.set_height(height as i32);
-        f.set_format(ffi::AV_PIX_FMT_RGBA);
-        f.alloc_buffer().expect("Failed to alloc input AVFrame buffer");
-        f
-    };
-
-    let scaled_avframe = {
-        let mut f = AVFrame::new();
-        f.set_width(width as i32);
-        f.set_height(height as i32);
-        f.set_format(ffi::AV_PIX_FMT_YUV420P);
-        f.alloc_buffer().expect("Failed to alloc scaled AVFrame buffer");
-        f
-    };
-
-    let pusher = EncoderPusher::new(encode_context.clone(), scaler, input_avframe, scaled_avframe);
+    let (encoder_pusher, encoder_puller) = EncoderBuilder::new()
+        .codec_id("libx264")
+        .filler(RGBAFrameFiller::new(BufferType::RgbaFrame))
+        .scaler(scaler)
+        .options(options)
+        .build();
 
     let h264_file = Arc::new(std::sync::Mutex::new(
         std::fs::File::create(&args.output).expect("Unable to create H264 output file"),
@@ -102,12 +68,12 @@ async fn main() {
         .feedable()
         .link(
             Component::new()
-                .append(pusher)
+                .append(encoder_pusher)
                 .tag("pusher"),
         )
         .link(
             Component::new()
-                .append(EncoderPuller::new(encode_context.clone()))
+                .append(encoder_puller)
                 .append(H264PacketWriter::new(h264_file.clone()))
                 .tag("puller"),
         );
