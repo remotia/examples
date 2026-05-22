@@ -23,7 +23,7 @@ features = ["buffers"]
 path = "../../remotia-ffmpeg-codecs"
 
 [dependencies.rsmpeg]
-version = "0.16.1"
+version = "0.18"
 default-features = false
 features = ["ffmpeg7", "link_vcpkg_ffmpeg"]
 
@@ -37,6 +37,6 @@ log = "0.4.27"
 y4m = "0.8.0"
 
 [package.metadata.vcpkg]
-dependencies = ["ffmpeg[x264]"]
+dependencies = ["ffmpeg[x264]:x64-linux"]
 git = "https://github.com/microsoft/vcpkg"
 rev = "34823ada10"

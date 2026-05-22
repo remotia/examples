@@ -15,7 +15,7 @@ Y4M video encoder and decoder using FFmpeg (via rsmpeg) and the remotia pipeline
 
 ## Building
 
-This example uses **vcpkg** to build FFmpeg 7.1.2 as a static library, and **rsmpeg 0.16.1** for Rust bindings. The build process follows the [cargo-vcpkg approach](https://github.com/larksuite/rsmpeg/blob/master/README.md#compiling-ffmpeg-through-cargo-vcpkg) described in the rsmpeg README.
+This example uses **vcpkg** to build FFmpeg as a static library, and **rsmpeg 0.18** for Rust bindings. The build process follows the [cargo-vcpkg approach](https://github.com/larksuite/rsmpeg/blob/master/doc/vcpkg.md) described in the rsmpeg documentation.
 
 ### 1. Build FFmpeg via cargo-vcpkg
 
@@ -23,21 +23,17 @@ This example uses **vcpkg** to build FFmpeg 7.1.2 as a static library, and **rsm
 cargo vcpkg --verbose build
 ```
 
-This clones vcpkg at the pinned revision and builds FFmpeg 7.1.2 with x264 support. The artifact is placed under `target/vcpkg/installed/x64-linux/`. This step is slow on the first run (compiles FFmpeg from source) but cached afterwards.
+This clones vcpkg at the pinned revision and builds FFmpeg with x264 support. This step is slow on the first run (compiles FFmpeg from source) but cached afterwards.
 
 ### 2. Set environment variables
 
-Three environment variables are required:
-
 ```bash
 export VCPKG_ROOT="${PWD}/target/vcpkg"
-export FFMPEG_PKG_CONFIG_PATH="${PWD}/target/vcpkg/installed/x64-linux/lib/pkgconfig"
 export FFMPEG_BINDING_PATH="$(find ~/.cargo/registry/src -path '*/rusty_ffmpeg-0.16.7*/src/binding.rs' -type f 2>/dev/null)"
 ```
 
-- **`VCPKG_ROOT`** — Tells `rusty_ffmpeg`'s build script where to find the vcpkg installation for library linking.
-- **`FFMPEG_PKG_CONFIG_PATH`** — Tells `rusty_ffmpeg`'s build script to use the vcpkg pkg-config files for link flags instead of probing the system.
-- **`FFMPEG_BINDING_PATH`** — Bypasses runtime bindgen and uses the pre-generated FFmpeg 7 binding shipped inside the `rusty_ffmpeg` crate. This is necessary when the system has FFmpeg 8+ headers installed, because bindgen would otherwise pick those up and generate incompatible opaque struct bindings.
+- **`VCPKG_ROOT`** — Tells the vcpkg crate where to find the vcpkg installation for library linking.
+- **`FFMPEG_BINDING_PATH`** — Uses the pre-generated FFmpeg 7 binding shipped inside the `rusty_ffmpeg` crate, bypassing runtime bindgen. This is necessary when the system has FFmpeg 8+ headers installed, because bindgen would otherwise pick those up and generate incompatible opaque struct bindings.
 
 > **Note:** If your system does **not** have FFmpeg headers installed (i.e. `/usr/include/libavformat/avformat.h` does not exist), you can omit `FFMPEG_BINDING_PATH` and let bindgen generate bindings at build time from the vcpkg headers. The pre-generated binding path is unstable (it includes the registry source hash) — if the `find` command returns empty, run a `cargo build` once without `FFMPEG_BINDING_PATH` to force `rusty_ffmpeg` to be fetched, then re-run the `find` command.
 
@@ -78,10 +74,6 @@ Encodes a Y4M stream (read from stdin) into an H.264 file.
 
 Make sure `VCPKG_ROOT` is set and points to the `target/vcpkg` directory. If you ran `cargo clean`, the vcpkg installed files are also removed — re-run `cargo vcpkg --verbose build`.
 
-### "FFMPEG_PKG_CONFIG_PATH is set to ... which does not exist"
-
-Same as above — `cargo clean` wipes the `target/` directory including vcpkg artifacts. Re-run `cargo vcpkg --verbose build`.
-
 ### Opaque struct errors from rsmpeg (e.g. "no field `pb` on type `AVFormatContext`")
 
 This means bindgen generated FFmpeg 8 bindings (opaque structs) instead of FFmpeg 7 bindings (full struct layout). Set `FFMPEG_BINDING_PATH` to use the pre-generated binding.
@@ -89,3 +81,7 @@ This means bindgen generated FFmpeg 8 bindings (opaque structs) instead of FFmpe
 ### `FFMPEG_BINDING_PATH` not found
 
 The pre-generated binding lives inside cargo's registry cache. The exact path includes a hash that varies per machine. If the `find` command returns nothing, the `rusty_ffmpeg` crate source hasn't been fetched yet. Run `cargo build` once (it will fail, but the source gets downloaded), then retry the `find` command.
+
+### Build fails on Windows MSVC
+
+Make sure `.cargo/config.toml` exists in the project with the required Windows link arguments (see the [rsmpeg vcpkg guide](https://github.com/larksuite/rsmpeg/blob/master/doc/vcpkg.md) for details).

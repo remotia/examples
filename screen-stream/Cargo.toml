@@ -7,7 +7,7 @@ edition = "2021"
 dependencies = [
     # "llvm:x64-windows-static-md",
     # "ffmpeg[x264,vpx]:x64-windows-static-md",
-    "ffmpeg[x264]",
+    "ffmpeg[x264]:x64-linux",
 ]
 git = "https://github.com/microsoft/vcpkg"
 rev = "5a58e645cefaae63d149ff50fc1ca1ec54c47a77"
