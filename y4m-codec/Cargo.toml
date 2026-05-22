@@ -25,7 +25,7 @@ path = "../../remotia-ffmpeg-codecs"
 [dependencies.rsmpeg]
 path = "../../remotia-ffmpeg-codecs/rsmpeg"
 default-features = false
-features = ["ffmpeg8", "link_system_ffmpeg"]
+features = ["ffmpeg8", "link_vcpkg_ffmpeg"]
 
 [dependencies]
 async-trait = "0.1.68"
@@ -35,3 +35,8 @@ env_logger = "0.10.0"
 image = "0.25.8"
 log = "0.4.27"
 y4m = "0.8.0"
+
+[package.metadata.vcpkg]
+dependencies = ["ffmpeg[x264]"]
+git = "https://github.com/microsoft/vcpkg"
+rev = "03b9ab95fd5ea1425427ccde11d13e92aa91bf51"
