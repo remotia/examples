@@ -1,0 +1,29 @@
+[package]
+name = "y4m-codec"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "y4m-encoder"
+path = "src/encoder.rs"
+
+[[bin]]
+name = "y4m-decoder"
+path = "src/decoder.rs"
+
+[dependencies.tokio]
+version = "1.28.2"
+features = ["rt", "rt-multi-thread", "macros"]
+
+[dependencies.rsmpeg]
+path = "local-crates/rsmpeg"
+default-features = false
+features = ["ffmpeg8", "link_system_ffmpeg"]
+
+[dependencies]
+clap = { version = "4.5", features = ["derive"] }
+cstr = "0.2"
+env_logger = "0.10.0"
+image = "0.25.8"
+log = "0.4.27"
+y4m = "0.8.0"
