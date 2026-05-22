@@ -1,3 +1,2 @@
 [env]
-FFMPEG_PKG_CONFIG_PATH = "/home/lorenzo/repository/remotia/examples/y4m-codec/tmp/ffmpeg_build/lib/pkgconfig"
-FFMPEG_LINK_MODE = "static"
+FFMPEG_LINK_MODE = "dynamic"

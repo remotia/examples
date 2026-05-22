@@ -1,14 +1,22 @@
 use std::ffi::CString;
+use std::sync::Arc;
 
 use clap::Parser;
 use cstr::cstr;
+use remotia::buffers::BytesMut;
+use remotia::pipeline::{component::Component, Pipeline};
+use remotia::traits::{FrameProperties, PullableFrameProperties};
 use rsmpeg::avcodec::{AVCodec, AVCodecContext};
 use rsmpeg::avutil::{AVDictionary, AVFrame, AVRational};
-use rsmpeg::error::RsmpegError;
 use rsmpeg::ffi;
 use rsmpeg::swscale::SwsContext;
+use tokio::sync::Mutex;
 
-use y4m_codec::{h264_writer::H264Writer, y4m_reader::Y4MReader};
+use y4m_codec::processors::{
+    encoder_puller::EncoderPuller, encoder_pusher::EncoderPusher,
+    h264_packet_writer::H264PacketWriter,
+};
+use y4m_codec::{BufferType, FrameData, Stat};
 
 #[derive(Parser, Debug)]
 struct Args {
@@ -22,16 +30,17 @@ struct Args {
     crf: u32,
 }
 
-fn main() {
+#[tokio::main]
+async fn main() {
     env_logger::init();
 
     let args = Args::parse();
     log::info!("Encoding {} -> {}", args.input, args.output);
 
-    let mut y4m_reader = Y4MReader::from_file(&args.input);
-    let width = y4m_reader.width();
-    let height = y4m_reader.height();
-
+    let y4m_file = std::fs::File::open(&args.input).expect("Unable to open Y4M file");
+    let mut y4m_reader = y4m::decode(y4m_file).expect("Unable to parse Y4M file");
+    let width = y4m_reader.get_width();
+    let height = y4m_reader.get_height();
     log::info!("Video dimensions: {}x{}", width, height);
 
     let encoder = AVCodec::find_encoder_by_name(cstr!("libx264")).expect("libx264 encoder not found");
@@ -48,26 +57,9 @@ fn main() {
         .set(cstr!("tune"), cstr!("film"), 0);
 
     let _remaining = encode_context.open(Some(dict)).expect("Unable to open encoder");
+    let encode_context = Arc::new(Mutex::new(encode_context));
 
-    let input_avframe = {
-        let mut f = AVFrame::new();
-        f.set_width(width as i32);
-        f.set_height(height as i32);
-        f.set_format(ffi::AV_PIX_FMT_RGBA);
-        f.alloc_buffer().expect("Failed to alloc input AVFrame buffer");
-        f
-    };
-
-    let mut scaled_avframe = {
-        let mut f = AVFrame::new();
-        f.set_width(width as i32);
-        f.set_height(height as i32);
-        f.set_format(ffi::AV_PIX_FMT_YUV420P);
-        f.alloc_buffer().expect("Failed to alloc scaled AVFrame buffer");
-        f
-    };
-
-    let mut scaler = SwsContext::get_context(
+    let scaler = SwsContext::get_context(
         width as i32,
         height as i32,
         ffi::AV_PIX_FMT_RGBA,
@@ -81,69 +73,105 @@ fn main() {
     )
     .expect("Failed to create SwsContext");
 
-    let mut h264_writer = H264Writer::from_file(&args.output);
-    let mut frame_id: i64 = 0;
-    let mut rgba_buf = vec![0u8; width * height * 4];
+    let input_avframe = {
+        let mut f = AVFrame::new();
+        f.set_width(width as i32);
+        f.set_height(height as i32);
+        f.set_format(ffi::AV_PIX_FMT_RGBA);
+        f.alloc_buffer().expect("Failed to alloc input AVFrame buffer");
+        f
+    };
 
+    let scaled_avframe = {
+        let mut f = AVFrame::new();
+        f.set_width(width as i32);
+        f.set_height(height as i32);
+        f.set_format(ffi::AV_PIX_FMT_YUV420P);
+        f.alloc_buffer().expect("Failed to alloc scaled AVFrame buffer");
+        f
+    };
+
+    let pusher = EncoderPusher::new(encode_context.clone(), scaler, input_avframe, scaled_avframe);
+
+    let h264_file = Arc::new(std::sync::Mutex::new(
+        std::fs::File::create(&args.output).expect("Unable to create H264 output file"),
+    ));
+
+    let mut pipeline = Pipeline::<FrameData>::new()
+        .tag("encoder")
+        .feedable()
+        .link(
+            Component::new()
+                .append(pusher)
+                .tag("pusher"),
+        )
+        .link(
+            Component::new()
+                .append(EncoderPuller::new(encode_context.clone()))
+                .append(H264PacketWriter::new(h264_file.clone()))
+                .tag("puller"),
+        );
+
+    let feeder = pipeline.get_feeder();
+    let handles = pipeline.run();
+
+    let mut frame_id: u128 = 0;
     loop {
-        match y4m_reader.read_next_frame(&mut rgba_buf) {
-            Ok(true) => {}
-            Ok(false) => {
-                log::info!("Y4M EOF after {} frames, flushing encoder", frame_id);
+        let frame = match y4m_reader.read_frame() {
+            Ok(f) => f,
+            Err(_) => {
+                log::info!("Y4M EOF after {} frames, sending EOF frame", frame_id);
                 break;
             }
-            Err(e) => {
-                log::error!("Y4M read error: {:?}", e);
-                break;
-            }
-        }
-
-        let linesize = input_avframe.linesize[0] as usize;
-        let h = input_avframe.height as usize;
-        let data = unsafe {
-            std::slice::from_raw_parts_mut(input_avframe.data[0], h * linesize)
         };
-        data.copy_from_slice(&rgba_buf);
 
-        scaler
-            .scale_frame(&input_avframe, 0, input_avframe.height, &mut scaled_avframe)
-            .expect("Scaling failed");
+        let y = frame.get_y_plane();
+        let u = frame.get_u_plane();
+        let v = frame.get_v_plane();
 
-        scaled_avframe.set_pts(frame_id);
+        let mut rgba = BytesMut::with_capacity(width * height * 4);
+        yuv420_to_rgba_into(y, u, v, width, height, &mut rgba);
+
+        let mut fd = FrameData::default();
+        fd.push(BufferType::RgbaFrame, rgba);
+        fd.set(Stat::FrameId, frame_id);
         frame_id += 1;
 
-        if let Err(e) = encode_context.send_frame(Some(&scaled_avframe)) {
-            log::warn!("Encoder send_frame error: {:?}", e);
-        }
-
-        loop {
-            match encode_context.receive_packet() {
-                Ok(packet) => {
-                    let data = unsafe {
-                        std::slice::from_raw_parts(packet.data, packet.size as usize)
-                    };
-                    h264_writer.write_packet(data);
-                }
-                Err(RsmpegError::EncoderDrainError) | Err(RsmpegError::EncoderFlushedError) => break,
-                Err(e) => panic!("Encoder receive_packet error: {:?}", e),
-            }
-        }
+        feeder.feed(fd);
     }
 
-    encode_context.send_frame(None).expect("Failed to flush encoder");
+    let mut eof_fd = FrameData::default();
+    eof_fd.set(Stat::Eof, 1);
+    feeder.feed(eof_fd);
 
-    loop {
-        match encode_context.receive_packet() {
-            Ok(packet) => {
-                let data = unsafe {
-                    std::slice::from_raw_parts(packet.data, packet.size as usize)
-                };
-                h264_writer.write_packet(data);
-            }
-            Err(RsmpegError::EncoderDrainError) | Err(RsmpegError::EncoderFlushedError) => break,
-            Err(e) => panic!("Encoder flush receive_packet error: {:?}", e),
-        }
+    drop(feeder);
+
+    for handle in handles {
+        handle.await.unwrap();
     }
 
-    log::info!("Encoding complete: {} frames, {} bytes written", frame_id, h264_writer.bytes_written);
+    let file_size = h264_file.lock().unwrap().metadata().unwrap().len();
+    log::info!("Encoding complete: {} frames, {} bytes written", frame_id, file_size);
+}
+
+fn yuv420_to_rgba_into(y_plane: &[u8], u_plane: &[u8], v_plane: &[u8], width: usize, height: usize, out: &mut BytesMut) {
+    let uv_width = width / 2;
+    for row in 0..height {
+        for col in 0..width {
+            let y_idx = row * width + col;
+            let uv_row = row / 2;
+            let uv_col = col / 2;
+            let uv_idx = uv_row * uv_width + uv_col;
+
+            let y = y_plane[y_idx] as f32;
+            let u = u_plane[uv_idx] as f32 - 128.0;
+            let v = v_plane[uv_idx] as f32 - 128.0;
+
+            let r = (y + 1.402 * v).clamp(0.0, 255.0) as u8;
+            let g = (y - 0.344 * u - 0.714 * v).clamp(0.0, 255.0) as u8;
+            let b = (y + 1.772 * u).clamp(0.0, 255.0) as u8;
+
+            out.extend_from_slice(&[r, g, b, 255]);
+        }
+    }
 }

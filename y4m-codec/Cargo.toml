@@ -13,7 +13,11 @@ path = "src/decoder.rs"
 
 [dependencies.tokio]
 version = "1.28.2"
-features = ["rt", "rt-multi-thread", "macros"]
+features = ["rt", "rt-multi-thread", "macros", "sync"]
+
+[dependencies.remotia]
+path = "../../remotia/crates/remotia"
+features = ["buffers"]
 
 [dependencies.rsmpeg]
 path = "local-crates/rsmpeg"
@@ -21,6 +25,7 @@ default-features = false
 features = ["ffmpeg8", "link_system_ffmpeg"]
 
 [dependencies]
+async-trait = "0.1.68"
 clap = { version = "4.5", features = ["derive"] }
 cstr = "0.2"
 env_logger = "0.10.0"
