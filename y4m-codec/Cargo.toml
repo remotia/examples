@@ -22,11 +22,6 @@ features = ["buffers"]
 [dependencies.remotia-ffmpeg-codecs]
 path = "../../remotia-ffmpeg-codecs"
 
-[dependencies.rsmpeg]
-version = "0.18"
-default-features = false
-features = ["ffmpeg7", "link_vcpkg_ffmpeg"]
-
 [dependencies]
 async-trait = "0.1.68"
 clap = { version = "4.5", features = ["derive"] }
