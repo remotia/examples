@@ -2310,8 +2310,7 @@ checksum = "47b34b781b31e5d73e9fbc8689c70551fd1ade9a19e3e28cfec8580a79290cc4"
 [[package]]
 name = "rsmpeg"
 version = "0.18.0+ffmpeg.8.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "523351495c9ff0bf4b99ed1f42f1415fc709526ddb63526cff85022b387c5811"
+source = "git+https://github.com/aegroto/rsmpeg?branch=fix%2Fupdated_rusty_api#a1f06d4c2c87e938bb6f84d66bb9c5afe4a006ed"
 dependencies = [
  "bon",
  "paste",
@@ -3570,6 +3569,7 @@ dependencies = [
  "log",
  "remotia",
  "remotia-ffmpeg-codecs",
+ "rsmpeg",
  "tokio",
  "y4m",
 ]

@@ -29,6 +29,7 @@ cstr = "0.2"
 env_logger = "0.10.0"
 image = "0.25.8"
 log = "0.4.27"
+rsmpeg = { git = "https://github.com/aegroto/rsmpeg", branch = "fix/updated_rusty_api", default-features = false, features = ["ffmpeg7_1", "link_vcpkg_ffmpeg"] }
 y4m = "0.8.0"
 
 [package.metadata.vcpkg]
