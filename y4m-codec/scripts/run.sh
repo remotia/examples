@@ -11,14 +11,33 @@ DURATION=5
 FPS=30
 FRAME_COUNT=$((DURATION * FPS))
 CRF=23
-
-Y4M_INPUT="${WORK_DIR}/sample_${VIDEO_WIDTH}x${VIDEO_HEIGHT}.y4m"
-H264_OUTPUT="${WORK_DIR}/encoded_crf${CRF}.h264"
-DECODED_DIR="${WORK_DIR}/decoded_crf${CRF}"
 DECODER_TIMEOUT=120
+
+Y4M_INPUT="${1:-}"
+H264_OUTPUT=""
+DECODED_DIR=""
 
 log() { echo "[*] $*"; }
 err() { echo "[!] $*" >&2; }
+
+resolve_input() {
+    if [[ -n "$Y4M_INPUT" ]]; then
+        if [[ ! -f "$Y4M_INPUT" ]]; then
+            err "Specified input not found: $Y4M_INPUT"
+            exit 1
+        fi
+        local basename
+        basename=$(basename "$Y4M_INPUT" .y4m)
+        H264_OUTPUT="${WORK_DIR}/${basename}_crf${CRF}.h264"
+        DECODED_DIR="${WORK_DIR}/${basename}_crf${CRF}_decoded"
+        return 0
+    fi
+
+    Y4M_INPUT="${WORK_DIR}/sample_${VIDEO_WIDTH}x${VIDEO_HEIGHT}.y4m"
+    H264_OUTPUT="${WORK_DIR}/encoded_crf${CRF}.h264"
+    DECODED_DIR="${WORK_DIR}/decoded_crf${CRF}"
+    generate_test_y4m
+}
 
 generate_test_y4m() {
     if [[ -f "$Y4M_INPUT" ]]; then
@@ -27,8 +46,8 @@ generate_test_y4m() {
     fi
 
     if ! command -v ffmpeg &>/dev/null; then
-        err "ffmpeg not found. Install ffmpeg or provide a Y4M file at: $Y4M_INPUT"
-        err "Example: ffmpeg -f lavfi -i testsrc=s=${VIDEO_WIDTH}x${VIDEO_HEIGHT}:r=${FPS} -t ${DURATION} -pix_fmt yuv420p \"$Y4M_INPUT\""
+        err "ffmpeg not found. Install ffmpeg or provide a Y4M file as argument."
+        err "Example: $0 path/to/video.y4m"
         return 1
     fi
 
@@ -81,11 +100,26 @@ compare_roundtrip() {
     fi
 }
 
+usage() {
+    echo "Usage: $0 [Y4M_FILE]"
+    echo ""
+    echo "Runs the y4m-codec encode/decode cycle."
+    echo ""
+    echo "If no Y4M_FILE is given, generates a synthetic test clip."
+    echo "Example with downloaded test data:"
+    echo "  $0 test_data/Beauty_1920x1080.y4m"
+}
+
 main() {
+    if [[ "${1:-}" == "-h" ]] || [[ "${1:-}" == "--help" ]]; then
+        usage
+        exit 0
+    fi
+
     log "=== y4m-codec sample run ==="
 
     mkdir -p "$WORK_DIR"
-    generate_test_y4m
+    resolve_input
     run_encoder
     run_decoder
     compare_roundtrip
