@@ -185,12 +185,60 @@ impl FrameProcessor<FrameData> for DecoderProcessor {
                 }
 
                 if packet_ready {
-                    let _ = decode_context.send_packet(Some(&packet));
+                    let mut sent = false;
+                    while !sent {
+                        match decode_context.send_packet(Some(&packet)) {
+                            Ok(()) => {
+                                sent = true;
+                            }
+                            Err(RsmpegError::DecoderFullError) => {
+                                drain_and_write_frames(
+                                    &mut decode_context,
+                                    &mut self.scaler,
+                                    &mut self.png_writer,
+                                    self.output_width,
+                                    self.output_height,
+                                );
+                            }
+                            Err(RsmpegError::SendPacketError(-11)) => {
+                                drain_and_write_frames(
+                                    &mut decode_context,
+                                    &mut self.scaler,
+                                    &mut self.png_writer,
+                                    self.output_width,
+                                    self.output_height,
+                                );
+                            }
+                            Err(e) => {
+                                log::warn!("DecoderProcessor: EOF flush send_packet error: {:?}", e);
+                                sent = true;
+                            }
+                        }
+                    }
+
                     packet = rsmpeg::avcodec::AVPacket::new();
                 }
             }
 
-            let _ = decode_context.send_packet(None);
+            match decode_context.send_packet(None) {
+                Ok(()) => {}
+                Err(RsmpegError::DecoderFullError) | Err(RsmpegError::SendPacketError(-11)) => {
+                    drain_and_write_frames(
+                        &mut decode_context,
+                        &mut self.scaler,
+                        &mut self.png_writer,
+                        self.output_width,
+                        self.output_height,
+                    );
+                    if let Err(e) = decode_context.send_packet(None) {
+                        log::warn!("DecoderProcessor: EOF flush send_packet(None) error after drain: {:?}", e);
+                    }
+                }
+                Err(e) => {
+                    log::warn!("DecoderProcessor: EOF flush send_packet(None) error: {:?}", e);
+                }
+            }
+
             drain_and_write_frames(
                 &mut decode_context,
                 &mut self.scaler,
