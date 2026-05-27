@@ -55,3 +55,98 @@ cat input.y4m | cargo run --bin y4m-encoder -- \
 ```
 
 Encodes a Y4M stream (read from stdin) into an H.264 file.
+
+## Scripts
+
+Helper scripts for building, downloading test data, and running sample encode/decode cycles.
+
+### Additional prerequisites
+
+- `ffmpeg` — for generating test clips and converting raw YUV to Y4M
+- `curl` — for downloading test data
+- `7z` — for extracting .7z archives
+
+### `scripts/build.sh`
+
+Builds the FFmpeg dependency via cargo-vcpkg and compiles the `y4m-encoder` and `y4m-decoder` binaries.
+
+```bash
+scripts/build.sh
+```
+
+### `scripts/download_test_data.sh`
+
+Downloads the [Beauty](https://ultravideo.fi/video/Beauty_1920x1080_120fps_420_8bit_YUV_RAW.7z) raw video (~883 MB), extracts it, and converts it to Y4M format (1920x1080, 30fps).
+
+All files are placed in `test_data/`, which is tracked in git but ignores its contents.
+
+```bash
+scripts/download_test_data.sh
+```
+
+Resulting files:
+
+| File | Description |
+|---|---|
+| `test_data/Beauty_1920x1080_120fps_420_8bit_YUV_RAW.7z` | Downloaded archive |
+| `test_data/Beauty_1920x1080_120fps_420_8bit_YUV.yuv` | Extracted raw YUV |
+| `test_data/Beauty_1920x1080.y4m` | Converted Y4M (encoder input) |
+
+### `scripts/run.sh`
+
+Runs a full encode/decode cycle and validates the roundtrip frame count.
+
+```bash
+scripts/run.sh [OPTIONS] [Y4M_FILE]
+```
+
+**Options:**
+
+| Option | Description |
+|---|---|
+| `-n, --frames N` | Encode only the first N frames |
+| `-h, --help` | Show help |
+
+If no `Y4M_FILE` is given, a synthetic 1920x1080 test clip (5s, 30fps) is generated via ffmpeg's `testsrc`.
+
+The encoder runs at CRF 23 by default. The decoder has a 120s timeout to avoid hanging on known EOF-handling issues.
+
+All outputs go to `sample-runs/`.
+
+**Examples:**
+
+```bash
+# Synthetic test clip (auto-generated)
+scripts/run.sh
+
+# Full Beauty video
+scripts/download_test_data.sh
+scripts/run.sh test_data/Beauty_1920x1080.y4m
+
+# First 30 frames only
+scripts/run.sh --frames 30 test_data/Beauty_1920x1080.y4m
+```
+
+### Typical workflow
+
+```bash
+scripts/build.sh
+scripts/download_test_data.sh
+scripts/run.sh --frames 30 test_data/Beauty_1920x1080.y4m
+```
+
+### Output structure
+
+```
+sample-runs/
+  <name>_crf23.h264               # Encoded H.264 bitstream
+  <name>_crf23_decoded/            # Decoded PNG frames
+    frame_0000.png
+    frame_0001.png
+    ...
+  <name>_frames30.y4m             # Truncated Y4M (when --frames is used)
+```
+
+### Known issues
+
+The decoder may hang before reading all frames due to a pipeline EOF-handling bug. The `run.sh` script applies a 120s timeout to the decoder to prevent indefinite hangs. With `--frames 30`, the full roundtrip completes successfully.
