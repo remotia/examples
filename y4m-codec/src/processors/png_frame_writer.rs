@@ -1,7 +1,8 @@
-use std::fs;
+use std::fs::File;
+use std::io::BufWriter;
 use std::path::PathBuf;
 
-use image::RgbaImage;
+use png::{BitDepth, ColorType, Compression, Encoder};
 
 pub struct PNGWriter {
     output_dir: PathBuf,
@@ -12,7 +13,7 @@ pub struct PNGWriter {
 
 impl PNGWriter {
     pub fn new(output_dir: PathBuf, width: u32, height: u32) -> Self {
-        fs::create_dir_all(&output_dir).expect("Unable to create output directory");
+        std::fs::create_dir_all(&output_dir).expect("Unable to create output directory");
         Self {
             output_dir,
             width,
@@ -26,12 +27,14 @@ impl PNGWriter {
             return;
         }
 
-        let pixels = rgba_data.to_vec();
-        let image = RgbaImage::from_raw(self.width, self.height, pixels)
-            .expect("Unable to create RGBA image from buffer");
-
         let path = self.output_dir.join(format!("frame_{:04}.png", self.frame_count));
-        image.save(&path).expect("Unable to save PNG file");
+        let file = BufWriter::new(File::create(&path).expect("Unable to create PNG file"));
+        let mut encoder = Encoder::new(file, self.width, self.height);
+        encoder.set_color(ColorType::Rgba);
+        encoder.set_depth(BitDepth::Eight);
+        encoder.set_compression(Compression::Fast);
+        let mut writer = encoder.write_header().expect("Unable to write PNG header");
+        writer.write_image_data(rgba_data).expect("Unable to write PNG image data");
 
         log::info!("Saved {}", path.display());
         self.frame_count += 1;

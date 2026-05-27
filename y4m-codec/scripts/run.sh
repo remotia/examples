@@ -121,7 +121,7 @@ generate_test_y4m() {
 
 run_encoder() {
     log "Encoding (CRF=${CRF}): $Y4M_ACTUAL -> $H264_OUTPUT"
-    cargo run --manifest-path "${PROJECT_DIR}/Cargo.toml" --bin y4m-encoder -- \
+    cargo run --release --manifest-path "${PROJECT_DIR}/Cargo.toml" --bin y4m-encoder -- \
         -i "$Y4M_ACTUAL" \
         -o "$H264_OUTPUT" \
         --crf "$CRF"
@@ -134,7 +134,7 @@ run_encoder() {
 run_decoder() {
     log "Decoding: $H264_OUTPUT -> $DECODED_DIR/ (timeout: ${DECODER_TIMEOUT}s)"
     timeout "$DECODER_TIMEOUT" \
-        cargo run --manifest-path "${PROJECT_DIR}/Cargo.toml" --bin y4m-decoder -- \
+        cargo run --release --manifest-path "${PROJECT_DIR}/Cargo.toml" --bin y4m-decoder -- \
         -i "$H264_OUTPUT" \
         -o "$DECODED_DIR" \
         -W "$VIDEO_WIDTH" \

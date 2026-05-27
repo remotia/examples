@@ -14,7 +14,7 @@ use rsmpeg::swscale::SwsContext;
 use tokio::sync::Mutex;
 
 use y4m_codec::processors::png_frame_writer::PNGWriter;
-use y4m_codec::{BufferType, Error, FrameData, Stat};
+use y4m_codec::{BufferType, FrameData, Stat};
 
 const READ_CHUNK_SIZE: usize = 65536;
 
@@ -67,17 +67,24 @@ async fn main() {
     )
     .expect("Failed to create SwsContext");
 
-    let png_writer = Arc::new(std::sync::Mutex::new(PNGWriter::new(
-        args.output_dir.into(),
-        args.width as u32,
-        args.height as u32,
-    )));
+    let (frame_tx, frame_rx) = std::sync::mpsc::channel::<Vec<u8>>();
+    let writer_output_dir: std::path::PathBuf = args.output_dir.into();
+    let writer_width = args.width as u32;
+    let writer_height = args.height as u32;
+
+    let writer_handle = std::thread::spawn(move || {
+        let mut writer = PNGWriter::new(writer_output_dir, writer_width, writer_height);
+        while let Ok(rgba_data) = frame_rx.recv() {
+            writer.write_frame(&rgba_data);
+        }
+        writer.frame_count()
+    });
 
     let processor = DecoderProcessor::new(
         decode_context,
         parser_context,
         scaler,
-        png_writer.clone(),
+        frame_tx,
         args.width as i32,
         args.height as i32,
     );
@@ -125,7 +132,7 @@ async fn main() {
         handle.await.unwrap();
     }
 
-    let frame_count = png_writer.lock().unwrap().frame_count();
+    let frame_count = writer_handle.join().expect("Writer thread panicked");
     log::info!("Decoding complete: {} frames written", frame_count);
 }
 
@@ -133,9 +140,9 @@ struct DecoderProcessor {
     decode_context: Arc<Mutex<AVCodecContext>>,
     parser_context: AVCodecParserContext,
     scaler: SwsContext,
-    png_writer: Arc<std::sync::Mutex<PNGWriter>>,
+    frame_tx: std::sync::mpsc::Sender<Vec<u8>>,
     output_width: i32,
-    output_height: i32,
+    scaled_frame: Option<rsmpeg::avutil::AVFrame>,
 }
 
 impl DecoderProcessor {
@@ -143,26 +150,37 @@ impl DecoderProcessor {
         decode_context: Arc<Mutex<AVCodecContext>>,
         parser_context: AVCodecParserContext,
         scaler: SwsContext,
-        png_writer: Arc<std::sync::Mutex<PNGWriter>>,
+        frame_tx: std::sync::mpsc::Sender<Vec<u8>>,
         output_width: i32,
         output_height: i32,
     ) -> Self {
+        let scaled_frame = {
+            let mut f = rsmpeg::avutil::AVFrame::new();
+            f.set_width(output_width);
+            f.set_height(output_height);
+            f.set_format(ffi::AV_PIX_FMT_RGBA);
+            f.alloc_buffer().expect("Failed to alloc scaled frame buffer");
+            Some(f)
+        };
+
         Self {
             decode_context,
             parser_context,
             scaler,
-            png_writer,
+            frame_tx,
             output_width,
-            output_height,
+            scaled_frame,
         }
     }
 }
 
 #[async_trait]
 impl FrameProcessor<FrameData> for DecoderProcessor {
-    async fn process(&mut self, mut frame_data: FrameData) -> Option<FrameData> {
+    async fn process(&mut self, frame_data: FrameData) -> Option<FrameData> {
         let is_eof = frame_data.get(&Stat::Eof) == Some(1);
         let mut decode_context = self.decode_context.lock().await;
+
+        let scaled_frame = self.scaled_frame.as_mut().unwrap();
 
         if is_eof {
             log::info!("DecoderProcessor: EOF, flushing parser and decoder");
@@ -195,18 +213,18 @@ impl FrameProcessor<FrameData> for DecoderProcessor {
                                 drain_and_write_frames(
                                     &mut decode_context,
                                     &mut self.scaler,
-                                    &mut self.png_writer,
+                                    &self.frame_tx,
                                     self.output_width,
-                                    self.output_height,
+                                    scaled_frame,
                                 );
                             }
                             Err(RsmpegError::SendPacketError(-11)) => {
                                 drain_and_write_frames(
                                     &mut decode_context,
                                     &mut self.scaler,
-                                    &mut self.png_writer,
+                                    &self.frame_tx,
                                     self.output_width,
-                                    self.output_height,
+                                    scaled_frame,
                                 );
                             }
                             Err(e) => {
@@ -226,9 +244,9 @@ impl FrameProcessor<FrameData> for DecoderProcessor {
                     drain_and_write_frames(
                         &mut decode_context,
                         &mut self.scaler,
-                        &mut self.png_writer,
+                        &self.frame_tx,
                         self.output_width,
-                        self.output_height,
+                        scaled_frame,
                     );
                     if let Err(e) = decode_context.send_packet(None) {
                         log::warn!("DecoderProcessor: EOF flush send_packet(None) error after drain: {:?}", e);
@@ -242,9 +260,9 @@ impl FrameProcessor<FrameData> for DecoderProcessor {
             drain_and_write_frames(
                 &mut decode_context,
                 &mut self.scaler,
-                &mut self.png_writer,
+                &self.frame_tx,
                 self.output_width,
-                self.output_height,
+                scaled_frame,
             );
             return Some(frame_data);
         }
@@ -282,9 +300,9 @@ impl FrameProcessor<FrameData> for DecoderProcessor {
                             drain_and_write_frames(
                                 &mut decode_context,
                                 &mut self.scaler,
-                                &mut self.png_writer,
+                                &self.frame_tx,
                                 self.output_width,
-                                self.output_height,
+                                scaled_frame,
                             );
                         }
                         Err(RsmpegError::DecoderFlushedError) => {
@@ -294,9 +312,9 @@ impl FrameProcessor<FrameData> for DecoderProcessor {
                             drain_and_write_frames(
                                 &mut decode_context,
                                 &mut self.scaler,
-                                &mut self.png_writer,
+                                &self.frame_tx,
                                 self.output_width,
-                                self.output_height,
+                                scaled_frame,
                             );
                         }
                         Err(e) => {
@@ -313,9 +331,9 @@ impl FrameProcessor<FrameData> for DecoderProcessor {
         drain_and_write_frames(
             &mut decode_context,
             &mut self.scaler,
-            &mut self.png_writer,
+            &self.frame_tx,
             self.output_width,
-            self.output_height,
+            scaled_frame,
         );
 
         Some(frame_data)
@@ -325,26 +343,17 @@ impl FrameProcessor<FrameData> for DecoderProcessor {
 fn drain_and_write_frames(
     decode_context: &mut AVCodecContext,
     scaler: &mut SwsContext,
-    png_writer: &mut Arc<std::sync::Mutex<PNGWriter>>,
+    frame_tx: &std::sync::mpsc::Sender<Vec<u8>>,
     output_width: i32,
-    output_height: i32,
+    scaled_frame: &mut rsmpeg::avutil::AVFrame,
 ) {
-    use rsmpeg::avutil::AVFrame;
-
-    let mut scaled_frame = {
-        let mut f = AVFrame::new();
-        f.set_width(output_width);
-        f.set_height(output_height);
-        f.set_format(ffi::AV_PIX_FMT_RGBA);
-        f.alloc_buffer().expect("Failed to alloc scaled frame buffer");
-        f
-    };
+    let row_bytes = output_width as usize * 4;
 
     loop {
         match decode_context.receive_frame() {
             Ok(codec_frame) => {
                 scaler
-                    .scale_frame(&codec_frame, 0, codec_frame.height, &mut scaled_frame)
+                    .scale_frame(&codec_frame, 0, codec_frame.height, scaled_frame)
                     .expect("Scale failed");
 
                 let linesize = scaled_frame.linesize[0] as usize;
@@ -352,8 +361,21 @@ fn drain_and_write_frames(
                 let rgba_data =
                     unsafe { std::slice::from_raw_parts(scaled_frame.data[0], height * linesize) };
 
-                let mut writer = png_writer.lock().unwrap();
-                writer.write_frame(rgba_data);
+                let packed = if linesize == row_bytes {
+                    rgba_data.to_vec()
+                } else {
+                    let mut buf = Vec::with_capacity(row_bytes * height);
+                    for row in 0..height {
+                        let offset = row * linesize;
+                        buf.extend_from_slice(&rgba_data[offset..offset + row_bytes]);
+                    }
+                    buf
+                };
+
+                if frame_tx.send(packed).is_err() {
+                    log::warn!("Writer thread disconnected, dropping frame");
+                    break;
+                }
             }
             Err(RsmpegError::DecoderDrainError) => break,
             Err(RsmpegError::DecoderFlushedError) => break,
