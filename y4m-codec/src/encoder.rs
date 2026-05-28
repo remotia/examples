@@ -75,13 +75,9 @@ async fn main() {
         .link(
             Component::new()
                 .append(encoder_pusher)
-                .tag("pusher"),
-        )
-        .link(
-            Component::new()
                 .append(encoder_puller)
                 .append(PacketWriter::new(output_file.clone()))
-                .tag("puller"),
+                .tag("encoder"),
         );
 
     let feeder = pipeline.get_feeder();
