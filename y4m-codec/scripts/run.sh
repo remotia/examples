@@ -11,7 +11,6 @@ DURATION=5
 FPS=30
 FRAME_COUNT=$((DURATION * FPS))
 CRF=23
-DECODER_TIMEOUT=120
 MAX_FRAMES=0
 
 Y4M_INPUT=""
@@ -132,13 +131,12 @@ run_encoder() {
 }
 
 run_decoder() {
-    log "Decoding: $H264_OUTPUT -> $DECODED_DIR/ (timeout: ${DECODER_TIMEOUT}s)"
-    timeout "$DECODER_TIMEOUT" \
-        cargo run --release --manifest-path "${PROJECT_DIR}/Cargo.toml" --bin y4m-decoder -- \
+    log "Decoding: $H264_OUTPUT -> $DECODED_DIR/"
+    cargo run --release --manifest-path "${PROJECT_DIR}/Cargo.toml" --bin y4m-decoder -- \
         -i "$H264_OUTPUT" \
         -o "$DECODED_DIR" \
         -W "$VIDEO_WIDTH" \
-        -H "$VIDEO_HEIGHT" || true
+        -H "$VIDEO_HEIGHT"
 
     local frame_count
     frame_count=$(find "$DECODED_DIR" -name "*.png" 2>/dev/null | wc -l)

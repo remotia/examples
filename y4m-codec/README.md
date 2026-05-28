@@ -149,4 +149,4 @@ sample-runs/
 
 ### Known issues
 
-The decoder may hang before reading all frames due to a pipeline EOF-handling bug. The `run.sh` script applies a 120s timeout to the decoder to prevent indefinite hangs. With `--frames 30`, the full roundtrip completes successfully.
+None currently. The decoder uses `DecoderBuilder` from `remotia-ffmpeg-codecs` with the pipeline's safe shutdown mechanism, ensuring all buffered frames are drained before the pipeline terminates.
