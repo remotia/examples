@@ -1,5 +1,5 @@
 use async_trait::async_trait;
-use remotia::pipeline::PipelineHandle;
+use remotia::pipeline::LazyPipelineHandle;
 use remotia::traits::FrameProcessor;
 
 use crate::data::FrameData;
@@ -7,11 +7,11 @@ use crate::data::FrameData;
 pub struct Producer {
     count: usize,
     limit: usize,
-    pipeline_handle: PipelineHandle,
+    pipeline_handle: LazyPipelineHandle,
 }
 
 impl Producer {
-    pub fn new(limit: usize, pipeline_handle: PipelineHandle) -> Self {
+    pub fn new(limit: usize, pipeline_handle: LazyPipelineHandle) -> Self {
         Self {
             count: 0,
             limit,
