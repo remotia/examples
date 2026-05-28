@@ -1,4 +1,10 @@
 Y4M_INPUT="$1"
+
+if [ -z "$Y4M_INPUT" ]; then
+    echo "Error: y4m input file is required. Usage: $0 <input.y4m> [output_dir]" >&2
+    exit 1
+fi
+
 OUTPUT_DIR="${2:-sample-runs}"
 
 mkdir -p "$OUTPUT_DIR"

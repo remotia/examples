@@ -88,6 +88,9 @@ main() {
     extract_archive
     convert_to_y4m
 
+    log "Cleaning up intermediate files..."
+    rm -f "${TEST_DATA_DIR}/${ARCHIVE_NAME}" "${TEST_DATA_DIR}/${RAW_YUV_NAME}"
+
     log "=== Download complete ==="
     log "Test data in: $TEST_DATA_DIR"
 }
