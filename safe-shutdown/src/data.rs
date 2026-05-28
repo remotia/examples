@@ -34,8 +34,4 @@ impl FrameData {
     pub fn payload(&self) -> Option<&str> {
         self.payload.as_deref()
     }
-
-    pub fn set_payload(&mut self, payload: String) {
-        self.payload = Some(payload);
-    }
 }
