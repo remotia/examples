@@ -8,23 +8,23 @@ use remotia_ffmpeg_codecs::FFMpegCodec;
 
 use crate::FrameData;
 
-pub struct H264PacketWriter {
+pub struct PacketWriter {
     file: Arc<Mutex<File>>,
 }
 
-impl H264PacketWriter {
+impl PacketWriter {
     pub fn new(file: Arc<Mutex<File>>) -> Self {
         Self { file }
     }
 }
 
 #[async_trait]
-impl FrameProcessor<FrameData> for H264PacketWriter {
+impl FrameProcessor<FrameData> for PacketWriter {
     async fn process(&mut self, frame_data: FrameData) -> Option<FrameData> {
         let packet_data = frame_data.get_packet_data_buffer();
         if !packet_data.is_empty() {
             let mut file = self.file.lock().unwrap();
-            file.write_all(packet_data).expect("Unable to write H264 packet data");
+            file.write_all(packet_data).expect("Unable to write packet data");
         }
 
         Some(frame_data)

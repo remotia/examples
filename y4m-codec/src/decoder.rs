@@ -26,6 +26,9 @@ struct Args {
 
     #[arg(short = 'H', long)]
     height: usize,
+
+    #[arg(short, long, default_value = "h264")]
+    codec: String,
 }
 
 #[tokio::main]
@@ -57,7 +60,7 @@ async fn main() {
     let pipeline_handle = pipeline.get_handle();
 
     let (pusher, puller) = DecoderBuilder::new()
-        .codec_id("h264")
+        .codec_id(&args.codec)
         .scaler(scaler)
         .pipeline_handle(pipeline_handle)
         .build();

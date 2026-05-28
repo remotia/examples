@@ -10,7 +10,7 @@ use remotia_ffmpeg_codecs::scaling::ScalerBuilder;
 use remotia_ffmpeg_codecs::options::Options;
 use remotia_ffmpeg_codecs::ffi;
 
-use y4m_codec::processors::h264_packet_writer::H264PacketWriter;
+use y4m_codec::processors::packet_writer::PacketWriter;
 use y4m_codec::{BufferType, FrameData, Stat};
 
 #[derive(Parser, Debug)]
@@ -21,8 +21,11 @@ struct Args {
     #[arg(short, long)]
     output: String,
 
-    #[arg(short, long, default_value_t = 23)]
-    crf: u32,
+    #[arg(short, long, default_value = "libx264")]
+    codec: String,
+
+    #[arg(short = 'O', long = "option", value_name = "KEY=VALUE")]
+    codec_options: Vec<String>,
 }
 
 #[tokio::main]
@@ -47,20 +50,23 @@ async fn main() {
         .output_pixel_format(ffi::AV_PIX_FMT_YUV420P)
         .build();
 
-    let options = Options::new()
-        .set("crf", &args.crf.to_string())
-        .set("preset", "medium")
-        .set("tune", "film");
+    let mut options = Options::new();
+    for opt in &args.codec_options {
+        let (key, value) = opt.split_once('=').unwrap_or_else(|| {
+            panic!("Invalid codec option '{}': expected KEY=VALUE", opt)
+        });
+        options = options.set(key.trim(), value.trim());
+    }
 
     let (encoder_pusher, encoder_puller) = EncoderBuilder::new()
-        .codec_id("libx264")
+        .codec_id(&args.codec)
         .filler(RGBAFrameFiller::new(BufferType::RgbaFrame))
         .scaler(scaler)
         .options(options)
         .build();
 
-    let h264_file = Arc::new(std::sync::Mutex::new(
-        std::fs::File::create(&args.output).expect("Unable to create H264 output file"),
+    let output_file = Arc::new(std::sync::Mutex::new(
+        std::fs::File::create(&args.output).expect("Unable to create output file"),
     ));
 
     let mut pipeline = Pipeline::<FrameData>::new()
@@ -74,7 +80,7 @@ async fn main() {
         .link(
             Component::new()
                 .append(encoder_puller)
-                .append(H264PacketWriter::new(h264_file.clone()))
+                .append(PacketWriter::new(output_file.clone()))
                 .tag("puller"),
         );
 
@@ -116,7 +122,7 @@ async fn main() {
         handle.await.unwrap();
     }
 
-    let file_size = h264_file.lock().unwrap().metadata().unwrap().len();
+    let file_size = output_file.lock().unwrap().metadata().unwrap().len();
     log::info!("Encoding complete: {} frames, {} bytes written", frame_id, file_size);
 }
 

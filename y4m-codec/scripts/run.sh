@@ -10,7 +10,9 @@ VIDEO_HEIGHT=1080
 DURATION=5
 FPS=30
 FRAME_COUNT=$((DURATION * FPS))
-CRF=23
+CODEC="libx264"
+DECODER_CODEC="h264"
+CODEC_OPTIONS="crf=23 preset=medium tune=film"
 MAX_FRAMES=0
 
 Y4M_INPUT=""
@@ -26,6 +28,18 @@ parse_args() {
         case "$1" in
             -n|--frames)
                 MAX_FRAMES="$2"
+                shift 2
+                ;;
+            --codec)
+                CODEC="$2"
+                shift 2
+                ;;
+            --decoder-codec)
+                DECODER_CODEC="$2"
+                shift 2
+                ;;
+            -O|--option)
+                CODEC_OPTIONS="$2"
                 shift 2
                 ;;
             -h|--help)
@@ -55,8 +69,10 @@ resolve_input() {
 
     local basename
     basename=$(basename "$Y4M_ACTUAL" .y4m)
-    H264_OUTPUT="${WORK_DIR}/${basename}_crf${CRF}.h264"
-    DECODED_DIR="${WORK_DIR}/${basename}_crf${CRF}_decoded"
+    local codec_suffix
+    codec_suffix=$(echo "$CODEC" | tr ':' '_')
+    H264_OUTPUT="${WORK_DIR}/${basename}_${codec_suffix}.h264"
+    DECODED_DIR="${WORK_DIR}/${basename}_${codec_suffix}_decoded"
 }
 
 truncate_input() {
@@ -119,11 +135,17 @@ generate_test_y4m() {
 }
 
 run_encoder() {
-    log "Encoding (CRF=${CRF}): $Y4M_ACTUAL -> $H264_OUTPUT"
+    log "Encoding (codec=${CODEC}, options=${CODEC_OPTIONS}): $Y4M_ACTUAL -> $H264_OUTPUT"
+    local encoder_args=()
+    while IFS= read -r opt; do
+        [[ -n "$opt" ]] && encoder_args+=(--option "$opt")
+    done <<< "$(echo "$CODEC_OPTIONS" | tr ' ' '\n')"
+
     cargo run --release --manifest-path "${PROJECT_DIR}/Cargo.toml" --bin y4m-encoder -- \
         -i "$Y4M_ACTUAL" \
         -o "$H264_OUTPUT" \
-        --crf "$CRF"
+        --codec "$CODEC" \
+        "${encoder_args[@]}"
 
     local size
     size=$(stat -c%s "$H264_OUTPUT" 2>/dev/null || stat -f%z "$H264_OUTPUT" 2>/dev/null)
@@ -136,7 +158,8 @@ run_decoder() {
         -i "$H264_OUTPUT" \
         -o "$DECODED_DIR" \
         -W "$VIDEO_WIDTH" \
-        -H "$VIDEO_HEIGHT"
+        -H "$VIDEO_HEIGHT" \
+        --codec "$DECODER_CODEC"
 
     local frame_count
     frame_count=$(find "$DECODED_DIR" -name "*.png" 2>/dev/null | wc -l)
@@ -160,8 +183,12 @@ usage() {
     echo "Runs the y4m-codec encode/decode cycle."
     echo ""
     echo "Options:"
-    echo "  -n, --frames N  Encode only the first N frames"
-    echo "  -h, --help      Show this help"
+    echo "  -n, --frames N          Encode only the first N frames"
+    echo "  --codec CODEC           Encoder codec (default: libx264)"
+    echo "  --decoder-codec CODEC   Decoder codec (default: h264)"
+    echo "  -O, --option OPTS      Space-separated KEY=VALUE codec options"
+    echo "                          (default: 'crf=23 preset=medium tune=film')"
+    echo "  -h, --help              Show this help"
     echo ""
     echo "If no Y4M_FILE is given, generates a synthetic test clip."
     echo ""
@@ -169,6 +196,7 @@ usage() {
     echo "  $0"
     echo "  $0 test_data/Beauty_1920x1080.y4m"
     echo "  $0 --frames 30 test_data/Beauty_1920x1080.y4m"
+    echo "  $0 --codec libvpx-vp9 --option 'crf=30 b:v=1M' video.y4m"
 }
 
 main() {
