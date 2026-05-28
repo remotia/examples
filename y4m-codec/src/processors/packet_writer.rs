@@ -8,11 +8,17 @@ use remotia_ffmpeg_codecs::FFMpegCodec;
 
 use crate::FrameData;
 
+/// Writes encoded packet data from frame data into an output file.
+///
+/// Intended as the terminal processor in an encoding pipeline. On each invocation it
+/// extracts the packet payload via [`FFMpegCodec::get_packet_data_buffer`] and appends
+/// it to the shared file.
 pub struct PacketWriter {
     file: Arc<Mutex<File>>,
 }
 
 impl PacketWriter {
+    /// Creates a new writer that appends packet data to `file`.
     pub fn new(file: Arc<Mutex<File>>) -> Self {
         Self { file }
     }

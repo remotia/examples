@@ -1,17 +1,25 @@
-use std::io::Read;
+//! Encoded-video-to-PNG decoder using a self-contained remotia pipeline.
+//!
+//! Pipeline layout:
+//!
+//! ```text
+//! [EncodedFileChunkReader → DecoderPusher] → [DecoderPuller → PNGWriter]
+//!  Component "reader-pusher"                Component "puller-writer"
+//! ```
+//!
+//! The first component is headless: it reads fixed-size chunks from the encoded
+//! bitstream and pushes them into the decoder. The decoder puller drains decoded
+//! RGBA frames, and the PNG writer persists each frame to disk.
 
 use clap::Parser;
-use remotia::buffers::BytesMut;
 use remotia::pipeline::{component::Component, Pipeline};
-use remotia::traits::{FrameProperties, PullableFrameProperties};
 use remotia_ffmpeg_codecs::decoders::DecoderBuilder;
 use remotia_ffmpeg_codecs::ffi;
 use remotia_ffmpeg_codecs::scaling::ScalerBuilder;
 
+use y4m_codec::processors::encoded_file_chunk_reader::EncodedFileChunkReader;
 use y4m_codec::processors::png_frame_writer::PNGWriter;
-use y4m_codec::{BufferType, FrameData, Stat};
-
-const READ_CHUNK_SIZE: usize = 65536;
+use y4m_codec::FrameData;
 
 #[derive(Parser, Debug)]
 struct Args {
@@ -53,17 +61,17 @@ async fn main() {
         .output_pixel_format(ffi::AV_PIX_FMT_RGBA)
         .build();
 
-    let mut pipeline = Pipeline::<FrameData>::new()
-        .tag("decoder")
-        .feedable();
+    let mut pipeline = Pipeline::<FrameData>::new().tag("decoder");
 
     let pipeline_handle = pipeline.get_handle();
 
     let (pusher, puller) = DecoderBuilder::new()
         .codec_id(&args.codec)
         .scaler(scaler)
-        .pipeline_handle(pipeline_handle)
+        .pipeline_handle(pipeline_handle.clone())
         .build();
+
+    let encoded_file = std::fs::File::open(&args.input).expect("Unable to open encoded input file");
 
     let png_writer = PNGWriter::new(
         args.output_dir.into(),
@@ -71,11 +79,12 @@ async fn main() {
         args.height as u32,
     );
 
-    let mut pipeline = pipeline
+    let pipeline = pipeline
         .link(
             Component::new()
+                .append(EncodedFileChunkReader::new(encoded_file, pipeline_handle))
                 .append(pusher)
-                .tag("pusher"),
+                .tag("reader-pusher"),
         )
         .link(
             Component::new()
@@ -84,35 +93,7 @@ async fn main() {
                 .tag("puller-writer"),
         );
 
-    let feeder = pipeline.get_feeder();
     let handles = pipeline.run();
-
-    let mut file = std::fs::File::open(&args.input).expect("Unable to open H264 input file");
-    let mut chunk = vec![0u8; READ_CHUNK_SIZE];
-
-    loop {
-        let n = match file.read(&mut chunk) {
-            Ok(0) => break,
-            Ok(n) => n,
-            Err(e) => {
-                log::error!("Read error: {:?}", e);
-                break;
-            }
-        };
-
-        let mut fd = FrameData::default();
-        let mut buf = BytesMut::with_capacity(n);
-        buf.extend_from_slice(&chunk[..n]);
-        fd.push(BufferType::EncodedPacket, buf);
-
-        feeder.feed(fd);
-    }
-
-    let mut eof_fd = FrameData::default();
-    eof_fd.set(Stat::Eof, 1);
-    feeder.feed(eof_fd);
-
-    drop(feeder);
 
     for handle in handles {
         handle.await.unwrap();

@@ -8,6 +8,11 @@ use remotia::traits::{BorrowFrameProperties, FrameProcessor};
 
 use crate::{BufferType, FrameData};
 
+/// Writes decoded RGBA frames to PNG files in an output directory.
+///
+/// Each frame is saved as `frame_NNNN.png` with a monotonically increasing counter.
+/// Handles line-size padding by repacking rows to the expected RGBA stride before
+/// encoding.
 pub struct PNGWriter {
     output_dir: PathBuf,
     width: u32,
@@ -16,6 +21,7 @@ pub struct PNGWriter {
 }
 
 impl PNGWriter {
+    /// Creates a new PNG writer. The output directory is created if it does not exist.
     pub fn new(output_dir: PathBuf, width: u32, height: u32) -> Self {
         std::fs::create_dir_all(&output_dir).expect("Unable to create output directory");
         Self {
@@ -59,6 +65,7 @@ impl PNGWriter {
         self.frame_count += 1;
     }
 
+    /// Returns the number of frames written so far.
     pub fn frame_count(&self) -> u32 {
         self.frame_count
     }

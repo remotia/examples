@@ -17,7 +17,7 @@ features = ["rt", "rt-multi-thread", "macros", "sync"]
 
 [dependencies.remotia]
 path = "../../remotia/crates/remotia"
-features = ["buffers"]
+features = ["buffers", "capture"]
 
 [dependencies.remotia-ffmpeg-codecs]
 path = "../../remotia-ffmpeg-codecs"

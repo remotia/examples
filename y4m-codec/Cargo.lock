@@ -1701,6 +1701,7 @@ dependencies = [
  "remotia-buffer-utils",
  "remotia-buffer-utils-macros",
  "remotia-core",
+ "remotia-core-capturers",
  "remotia-core-renderers",
  "scrap",
  "tokio",
@@ -1738,6 +1739,18 @@ dependencies = [
  "rand",
  "scrap",
  "tokio",
+]
+
+[[package]]
+name = "remotia-core-capturers"
+version = "0.1.1"
+dependencies = [
+ "async-trait",
+ "log",
+ "remotia-buffer-utils",
+ "remotia-core",
+ "scrap",
+ "y4m",
 ]
 
 [[package]]

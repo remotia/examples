@@ -1,9 +1,22 @@
+//! Y4M-to-encoded-video encoder using a self-contained remotia pipeline.
+//!
+//! Pipeline layout:
+//!
+//! ```text
+//! [Y4MRGBAFrameCapturer → EncoderPusher] → [EncoderPuller → PacketWriter]
+//!  Component "capturer-pusher"            Component "puller-writer"
+//! ```
+//!
+//! The first component is headless (no external feeder): it generates a
+//! [`FrameData`] on each tick, which the capturer fills with RGBA pixels read
+//! from the Y4M source and converts from YUV420p. The encoder pusher/puller
+//! pair handles FFmpeg encoding, and the packet writer persists the output.
+
 use std::sync::Arc;
 
 use clap::Parser;
-use remotia::buffers::BytesMut;
+use remotia::capture::y4m::Y4MRGBAFrameCapturer;
 use remotia::pipeline::{component::Component, Pipeline};
-use remotia::traits::{FrameProperties, PullableFrameProperties};
 use remotia_ffmpeg_codecs::encoders::EncoderBuilder;
 use remotia_ffmpeg_codecs::encoders::fillers::rgba::RGBAFrameFiller;
 use remotia_ffmpeg_codecs::scaling::ScalerBuilder;
@@ -39,7 +52,7 @@ async fn main() {
     log::info!("Encoding {} -> {}", args.input, args.output);
 
     let y4m_file = std::fs::File::open(&args.input).expect("Unable to open Y4M file");
-    let mut y4m_reader = y4m::decode(y4m_file).expect("Unable to parse Y4M file");
+    let y4m_reader = y4m::decode(y4m_file).expect("Unable to parse Y4M file");
     let width = y4m_reader.get_width();
     let height = y4m_reader.get_height();
     log::info!("Video dimensions: {}x{}", width, height);
@@ -72,88 +85,39 @@ async fn main() {
         std::fs::File::create(&args.output).expect("Unable to create output file"),
     ));
 
-    let mut pipeline = Pipeline::<FrameData>::new()
-        .tag("encoder")
-        .feedable()
+    let mut pipeline = Pipeline::<FrameData>::new().tag("encoder");
+
+    let pipeline_handle = pipeline.get_handle();
+
+    let y4m_capturer = Y4MRGBAFrameCapturer::from_decoder(
+        y4m_reader,
+        BufferType::RgbaFrame,
+        Stat::Eof,
+        Stat::FrameId,
+        args.max_frames,
+        pipeline_handle,
+    );
+
+    let pipeline = pipeline
         .link(
             Component::new()
+                .append(y4m_capturer)
                 .append(encoder_pusher)
-                .tag("pusher"),
+                .tag("capturer-pusher"),
         )
         .link(
             Component::new()
                 .append(encoder_puller)
                 .append(PacketWriter::new(output_file.clone()))
-                .tag("puller"),
+                .tag("puller-writer"),
         );
 
-    let feeder = pipeline.get_feeder();
     let handles = pipeline.run();
-
-    let mut frame_id: u128 = 0;
-    loop {
-        let frame = match y4m_reader.read_frame() {
-            Ok(f) => f,
-            Err(_) => {
-                log::info!("Y4M EOF after {} frames, sending EOF frame", frame_id);
-                break;
-            }
-        };
-
-        let y = frame.get_y_plane();
-        let u = frame.get_u_plane();
-        let v = frame.get_v_plane();
-
-        let mut rgba = BytesMut::with_capacity(width * height * 4);
-        yuv420_to_rgba_into(y, u, v, width, height, &mut rgba);
-
-        let mut fd = FrameData::default();
-        fd.push(BufferType::RgbaFrame, rgba);
-        fd.set(Stat::FrameId, frame_id);
-        frame_id += 1;
-
-        feeder.feed(fd);
-
-        if let Some(max) = args.max_frames {
-            if frame_id >= max as u128 {
-                log::info!("Reached frame limit ({}) stopping", max);
-                break;
-            }
-        }
-    }
-
-    let mut eof_fd = FrameData::default();
-    eof_fd.set(Stat::Eof, 1);
-    feeder.feed(eof_fd);
-
-    drop(feeder);
 
     for handle in handles {
         handle.await.unwrap();
     }
 
     let file_size = output_file.lock().unwrap().metadata().unwrap().len();
-    log::info!("Encoding complete: {} frames, {} bytes written", frame_id, file_size);
-}
-
-fn yuv420_to_rgba_into(y_plane: &[u8], u_plane: &[u8], v_plane: &[u8], width: usize, height: usize, out: &mut BytesMut) {
-    let uv_width = width / 2;
-    for row in 0..height {
-        for col in 0..width {
-            let y_idx = row * width + col;
-            let uv_row = row / 2;
-            let uv_col = col / 2;
-            let uv_idx = uv_row * uv_width + uv_col;
-
-            let y = y_plane[y_idx] as f32;
-            let u = u_plane[uv_idx] as f32 - 128.0;
-            let v = v_plane[uv_idx] as f32 - 128.0;
-
-            let r = (y + 1.402 * v).clamp(0.0, 255.0) as u8;
-            let g = (y - 0.344 * u - 0.714 * v).clamp(0.0, 255.0) as u8;
-            let b = (y + 1.772 * u).clamp(0.0, 255.0) as u8;
-
-            out.extend_from_slice(&[r, g, b, 255]);
-        }
-    }
+    log::info!("Encoding complete: {} bytes written", file_size);
 }

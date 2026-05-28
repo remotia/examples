@@ -1,3 +1,5 @@
+//! Frame data types and buffer/stat keys for the Y4M codec pipeline.
+
 pub mod processors;
 
 use std::collections::HashMap;
@@ -6,19 +8,27 @@ use remotia::buffers::{BufMut, BuffersMap, BytesMut, buffers_map};
 use remotia::traits::{BorrowFrameProperties, BorrowMutFrameProperties, FrameError, FrameProperties};
 use remotia_ffmpeg_codecs::FFMpegCodec;
 
+/// Buffer slot keys used by the encoding/decoding pipeline.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum BufferType {
+    /// RGBA pixel data produced by Y4M capture or decoder output.
     RgbaFrame,
+    /// Encoded bitstream data (input to decoder, output from encoder).
     EncodedPacket,
+    /// Decoded RGBA frame produced by the decoder puller.
     DecodedRGBAFrame,
 }
 
+/// Stat keys carried alongside frame data through the pipeline.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Stat {
+    /// Monotonically increasing frame counter.
     FrameId,
+    /// Set to `1` on the final frame to signal end-of-stream.
     Eof,
 }
 
+/// Codec-specific error kinds reported through frame data.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Error {
     CodecError,
@@ -26,6 +36,11 @@ pub enum Error {
     DrainError,
 }
 
+/// Frame data that flows through the Y4M codec pipeline.
+///
+/// Carries typed buffers ([`BufferType`]) and stat metadata ([`Stat`]) as well as
+/// an optional error slot. The `#[buffers_map]` macro generates [`PullableFrameProperties`]
+/// impl for the `buffers` field.
 #[derive(Default, Debug)]
 #[buffers_map(buffers)]
 pub struct FrameData {
