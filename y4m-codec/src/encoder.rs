@@ -26,6 +26,9 @@ struct Args {
 
     #[arg(short = 'O', long = "option", value_name = "KEY=VALUE")]
     codec_options: Vec<String>,
+
+    #[arg(short = 'n', long = "frames")]
+    max_frames: Option<u64>,
 }
 
 #[tokio::main]
@@ -75,9 +78,13 @@ async fn main() {
         .link(
             Component::new()
                 .append(encoder_pusher)
+                .tag("pusher"),
+        )
+        .link(
+            Component::new()
                 .append(encoder_puller)
                 .append(PacketWriter::new(output_file.clone()))
-                .tag("encoder"),
+                .tag("puller"),
         );
 
     let feeder = pipeline.get_feeder();
@@ -106,6 +113,13 @@ async fn main() {
         frame_id += 1;
 
         feeder.feed(fd);
+
+        if let Some(max) = args.max_frames {
+            if frame_id >= max as u128 {
+                log::info!("Reached frame limit ({}) stopping", max);
+                break;
+            }
+        }
     }
 
     let mut eof_fd = FrameData::default();
