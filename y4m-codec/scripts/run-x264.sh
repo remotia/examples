@@ -13,7 +13,7 @@ H264_OUTPUT="${OUTPUT_DIR}/${basename}_x264.h264"
 DECODED_DIR="${OUTPUT_DIR}/${basename}_x264_decoded"
 
 cargo run --release --bin y4m-encoder -- \
-    -i "$Y4M_INPUT" -o "$H264_OUTPUT" --frames 30 \
+    -i "$Y4M_INPUT" -o "$H264_OUTPUT" \
     --codec libx264 --option "crf=23" --option "preset=medium" --option "tune=film"
 
 cargo run --release --bin y4m-decoder -- \
